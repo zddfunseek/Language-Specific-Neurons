@@ -1,16 +1,37 @@
 import argparse
+import os
 from types import MethodType
 
 import torch
+from vllm
 from vllm import LLM, SamplingParams
 
+is_oldver_vllm = (vllm.__version__ < '0.5.0')
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--model", type=str, default="/home/dozhang/Llama-3/Meta-Llama-3-8B-Instruct")
-parser.add_argument("-c", "--traindata", type=str, default="/home/dozhang/hh-rlhf/harmless-base/train.jsonl.gz")
+parser.add_argument("-c", "--traindata", type=str, default="/home/dozhang/EvalLLM/output/gsm8k/Meta-Llama-3-8B-Instruct/predictions_GSM8K.jsonl")
+parser.add_argument("-t", "--taskname", type=str, default="gsm8k")
 args = parser.parse_args()
 
 def Load_traindata():
+    # process input data files
+    input_file = args.traindata
+    import gzip
+    import json
+    datainput = {}
+    datainput['chosen'] = []
+    datainput['rejected'] = []
+    with open(input_file, 'rt', encoding='utf-8') as f_in:
+        for line in f_in:
+            json_obj = json.loads(line)
+            if json_obj['answer'] == json_obj['prediction']:
+                datainput['chosen'].append(json_obj['prompt'] + '\n' + json_obj['model_output'])
+            else:
+                datainput['rejected'].append(json_obj['prompt'] + '\n' + json_obj['model_output'])
+    return datainput
+
+def Load_traindata_gz():
     # process input data files
     input_file = args.traindata
     import gzip
@@ -79,9 +100,12 @@ def factory(idx):
         return bloom_forward
 
 # import pdb; pdb.set_trace()
-for i in range(num_layers):
+for i in range(num_layers):    
     if is_llama:
-        obj = model.llm_engine.driver_worker.model_runner.model.model.layers[i].mlp
+        if is_oldver_vllm:
+            obj = model.llm_engine.driver_worker.model_runner.model.model.layers[i].mlp
+        else:
+            obj = model.llm_engine.model_executor.driver_worker.model_runner.model.model.layers[i].mlp
     else:
         obj = model.llm_engine.driver_worker.model_runner.model.transformer.h[i].mlp
     obj.forward = MethodType(factory(i), obj)
@@ -102,7 +126,11 @@ for datatype in inputdata.keys():
     output = model.generate(prompt_token_ids=input_ids, sampling_params=SamplingParams(max_tokens=1, temperature=0, stop=["</s>"]))
     out_dict = dict(n=num_activation[0], sum1=sum1.to('cpu'), sum2=sum2.to('cpu'), sum3=sum3.to('cpu'), sum4=sum4.to('cpu'), over_zero=over_zero.to('cpu'))
     
+    output_folder = f"output/hh-rlhf/results/harmless"
+    output_folder = f"output/{args.taskname}"
+    os.makedirs(output_folder, exist_ok=True)
+
     if is_llama:
-        torch.save(out_dict, f'output/hh-rlhf/neuronstate.train_{datatype}.llama-3-inst')
+        torch.save(out_dict, f'{output_folder}/neuronstate.train_{datatype}.llama-3-Instruct')
     else:
-        torch.save(out_dict, f'output/hh-rlhf/neuronstate.train_{datatype}.train.bloom-7b')
+        torch.save(out_dict, f'{output_folder}/neuronstate.train_{datatype}.train.bloom-7b')

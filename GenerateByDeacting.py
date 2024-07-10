@@ -7,6 +7,7 @@ import torch
 import subprocess
 import signal
 import torch.nn.functional as F
+import vllm
 from vllm import LLM, SamplingParams
 
 answer_lang = {
@@ -19,13 +20,40 @@ answer_lang = {
     "vi": " Hãy trả lời bằng tiếng Việt.",
 }
 
+is_oldver_vllm = (vllm.__version__ < '0.5.0')
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-m", "--model", type=str, default="/home/dozhang/Llama-3/Meta-Llama-3-8B-Instruct")
-parser.add_argument("-a", "--activation_mask", type=str, default="output/hh-rlhf/train.activations.llama-3-inst")
+parser.add_argument("-t", "--taskname", type=str, default="gsm8k")
+parser.add_argument("-a", "--activation_mask", type=str, default="")
 args = parser.parse_args()
+args.activation_mask = f'output/{args.taskname}/train.activations.llama-3-Instruct'
 
 def Load_testdata():
+    # process input data files
+    input_file = '/home/dozhang/EvalLLM/output/gsm8k/Meta-Llama-3-8B-Instruct/predictions_GSM8K.jsonl'
+    import gzip
+    import json
+    datainput = {}
+    datainput['chosen'] = []
+    datainput['rejected'] = []
+    with open(input_file, 'rt', encoding='utf-8') as f_in:
+        for line in f_in:
+            json_obj = json.loads(line)
+            item = {
+                    'prompt': json_obj['prompt'],
+                    'answer': json_obj['answer'],
+                    'prediction': json_obj['prediction'],
+                    'oriresult': json_obj['model_output'],
+                    }
+            if json_obj['answer'] == json_obj['prediction']:
+                datainput['chosen'].append(item)
+            else:
+                datainput['rejected'].append(item)
+
+    return datainput
+
+def Load_testdata_gz():
     # process input data files
     input_file = '/home/dozhang/hh-rlhf/harmless-base/test.jsonl.gz'
     import gzip
@@ -40,11 +68,14 @@ def Load_testdata():
             p1data = json_obj['chosen']
             p2data = json_obj['rejected']
             
-            achor = 'Assistant: '
+            humanAchor = '\n\nHuman: '
+            achor = '\n\nAssistant: '
             last_occurrence_index = p1data.rfind(achor)
+            first_occurrence_index = p1data.index(achor)
             assert (p1data[:last_occurrence_index].strip() == p2data[:last_occurrence_index].strip(), f"{json_obj}")
 
-            datainput['prompt'].append(p1data[:last_occurrence_index].strip())
+            #datainput['prompt'].append(p1data[:last_occurrence_index].strip())
+            datainput['prompt'].append(p1data[:first_occurrence_index][len(humanAchor):].strip())
             datainput['chosen'].append(p1data[last_occurrence_index + len(achor):].strip())
             datainput['rejected'].append(p2data[last_occurrence_index + len(achor):].strip())
 
@@ -61,7 +92,7 @@ def DestroyModel():
 
 testdata = Load_testdata()
 activation_masks = torch.load(args.activation_mask)
-activation_masks = [None]
+#activation_masks = [None]
 
 is_llama = bool(args.model.lower().find("llama") >= 0)
 
@@ -73,14 +104,14 @@ is_llama = bool(args.model.lower().find("llama") >= 0)
 #     activation_masks = [None]
 
 
-output_folder = f"output/hh-rlhf/results"
+output_folder = f"output/{args.taskname}/results"
 os.makedirs(output_folder, exist_ok=True)
 
 tasks = ["chosen", "rejected"]
 for activation_mask, mask_lang in zip(activation_masks[:1], tasks[:1]):
 
     model = LLM(model=args.model, tensor_parallel_size=torch.cuda.device_count(), enforce_eager=True)
-    sampling_params = SamplingParams(temperature=0, repetition_penalty=1.1, max_tokens = 2048, stop = ["</s>", "<|eot_id|>", "Human: "])
+    sampling_params = SamplingParams(temperature=0, repetition_penalty=1.1, max_tokens = 2048, stop = ["</s>", "<|eot_id|>"])
     #import pdb; pdb.set_trace()
     # DestroyModel()
     # model = LLM(model=args.model, tensor_parallel_size=torch.cuda.device_count(), enforce_eager=True)
@@ -88,11 +119,13 @@ for activation_mask, mask_lang in zip(activation_masks[:1], tasks[:1]):
     if activation_mask:
         def factory(mask):
             def llama_forward(self, x):
-                gate_up, _ = self.gate_up_proj(x)  # b, l, 2i
+                gate_up, _ = self.gate_up_proj(x)  # b * l, 2i
                 i = gate_up.size(-1)
-                activation = F.silu(gate_up[:, :, : i // 2])
-                activation.index_fill_(2, mask, 0)
-                x = activation * gate_up[:, :, i // 2 :]
+                #import pdb; pdb.set_trace()
+                activation = F.silu(gate_up[..., : i // 2])
+                #activation.index_fill_(1, mask, 0)
+                activation.index_fill_(-1, mask, 0)
+                x = activation * gate_up[..., i // 2 :]
                 x, _ = self.down_proj(x)
                 return x
 
@@ -110,29 +143,34 @@ for activation_mask, mask_lang in zip(activation_masks[:1], tasks[:1]):
 
         for i, layer_mask in enumerate(activation_mask):
             if is_llama:
-                obj = model.llm_engine.driver_worker.model_runner.model.model.layers[i].mlp
+                if is_oldver_vllm:
+                    obj = model.llm_engine.driver_worker.model_runner.model.model.layers[i].mlp
+                else:
+                    obj = model.llm_engine.model_executor.driver_worker.model_runner.model.model.layers[i].mlp
             else:
                 obj = model.llm_engine.driver_worker.model_runner.model.transformer.h[i].mlp
             obj.forward = MethodType(factory(layer_mask.to('cuda')), obj)
     
     
     for lang in tasks:    
-        texts = testdata['prompt'][:10]
+        texts = [it['prompt'] for it in testdata[lang]]
         outputs = model.generate(texts, sampling_params)
         outputs = [o.outputs[0].text.strip() for o in outputs]
 
         if activation_mask:
-            output_file = f"{output_folder}/{lang}.perturb_by.{mask_lang}.jsonl"
+            output_file = f"{output_folder}/{lang}.deactivate_by.{mask_lang}.jsonl.{str(is_oldver_vllm)}.lastdim"
         else:
-            output_file = f"{output_folder}/{lang}.normal.jsonl"
+            output_file = f"{output_folder}/{lang}.llama3-base_normal.jsonl"
 
         results = []
-        for raw, t, o in zip(testdata[lang][:10], texts, outputs):
+        for t, o in zip(testdata[lang], outputs):
             out = {
                     "lang": lang,
-                    "prompt": t, 
-                    "oriresponse": raw,
-                    "output": o
+                    "prompt": t['prompt'], 
+                    'answer': t['answer'],
+                    'prediction': t['prediction'],
+                    'oriresult': t['oriresult'],
+                    "newoutput": o
                   }
             results.append(out)
 

@@ -1,10 +1,16 @@
 import torch
 import torch.nn.functional as F
+import argparse
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-t", "--taskname", type=str, default="gsm8k")
+args = parser.parse_args()
 
 def LoadNeuronState(datatypelist = ['chosen', 'rejected']):
     numSample, over_zero = [], []
     for datatype in datatypelist:
-        data = torch.load(f'output/hh-rlhf/neuronstate.train_{datatype}.llama-3-inst')
+        data = torch.load(f'output/{args.taskname}/neuronstate.train_{datatype}.llama-3-Instruct')
         numSample.append(data['n'])
         over_zero.append(data['over_zero'])
 
@@ -66,4 +72,4 @@ def activation(outputfile):
         final_indice.append(layer_index)
     torch.save(final_indice, outputfile)  
 
-activation(f"output/hh-rlhf/train.activations.llama-3-inst")
+activation(f"output/{args.taskname}/train.activations.llama-3-Instruct")
