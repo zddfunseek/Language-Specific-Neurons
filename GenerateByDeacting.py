@@ -29,6 +29,8 @@ parser.add_argument("-a", "--activation_mask", type=str, default="")
 args = parser.parse_args()
 args.activation_mask = f'output/{args.taskname}/train.activations.llama-3-Instruct'
 
+llama_3_inst_template = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{instruction}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+
 def Load_testdata():
     # process input data files
     input_file = '/home/dozhang/EvalLLM/output/gsm8k/Meta-Llama-3-8B-Instruct/predictions_GSM8K.jsonl'
@@ -41,7 +43,7 @@ def Load_testdata():
         for line in f_in:
             json_obj = json.loads(line)
             item = {
-                    'prompt': json_obj['prompt'],
+                    'prompt': llama_3_inst_template.format(instruction=json_obj['prompt']),
                     'answer': json_obj['answer'],
                     'prediction': json_obj['prediction'],
                     'oriresult': json_obj['model_output'],
@@ -112,18 +114,20 @@ for activation_mask, mask_lang in zip(activation_masks[:1], tasks[:1]):
 
     model = LLM(model=args.model, tensor_parallel_size=torch.cuda.device_count(), enforce_eager=True)
     sampling_params = SamplingParams(temperature=0, repetition_penalty=1.1, max_tokens = 2048, stop = ["</s>", "<|eot_id|>"])
-    #import pdb; pdb.set_trace()
+    # import pdb; pdb.set_trace()
     # DestroyModel()
+    # torch.cuda.empty_cache()
     # model = LLM(model=args.model, tensor_parallel_size=torch.cuda.device_count(), enforce_eager=True)
+    # a = model.generate(['what is the earth'], sampling_params)
+    # print (a)
+    # import pdb; pdb.set_trace()
 
     if activation_mask:
         def factory(mask):
             def llama_forward(self, x):
                 gate_up, _ = self.gate_up_proj(x)  # b * l, 2i
                 i = gate_up.size(-1)
-                #import pdb; pdb.set_trace()
                 activation = F.silu(gate_up[..., : i // 2])
-                #activation.index_fill_(1, mask, 0)
                 activation.index_fill_(-1, mask, 0)
                 x = activation * gate_up[..., i // 2 :]
                 x, _ = self.down_proj(x)
@@ -158,7 +162,7 @@ for activation_mask, mask_lang in zip(activation_masks[:1], tasks[:1]):
         outputs = [o.outputs[0].text.strip() for o in outputs]
 
         if activation_mask:
-            output_file = f"{output_folder}/{lang}.deactivate_by.{mask_lang}.jsonl.{str(is_oldver_vllm)}.lastdim"
+            output_file = f"{output_folder}/{lang}.deactivate_by.{mask_lang}.jsonl.{str(is_oldver_vllm)}.template"
         else:
             output_file = f"{output_folder}/{lang}.llama3-base_normal.jsonl"
 
