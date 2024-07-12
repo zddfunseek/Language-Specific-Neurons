@@ -24,7 +24,7 @@ is_oldver_vllm = (vllm.__version__ < '0.5.0')
 is_llama = True
 
 model = LLM(model='/home/dozhang/Llama-3/Meta-Llama-3-8B-Instruct', tensor_parallel_size=torch.cuda.device_count(), enforce_eager=True)
-sampling_params = SamplingParams(temperature=0, repetition_penalty=1.1, max_tokens = 2048, stop = ["</s>", "<|eot_id|>"], logprobs=3, prompt_logprobs=3)
+sampling_params = SamplingParams(temperature=0, repetition_penalty=1.1, max_tokens = 2048, stop = ["</s>", "<|eot_id|>", "<|end_of_text|>"], logprobs=5, prompt_logprobs=5)
 
 def factory(mask):
     def llama_forward(self, x):
@@ -65,7 +65,11 @@ for i, layer_mask in enumerate(activation_mask):
         obj = model.llm_engine.driver_worker.model_runner.model.transformer.h[i].mlp
     obj.forward = MethodType(factory(layer_mask.to('cuda')), obj)
 
-output =  model.generate(['1=E, 2=F, 3=?'], sampling_params)
+template = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{instruction}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+query = "if 1+3=10 and 2+5=27, then 3+4=?"
+#query = template.format(instruction=query)
+output =  model.generate([query], sampling_params)
+#import pdb; pdb.set_trace()
 
 def Access_Logits(output):
     # access logits
@@ -83,26 +87,28 @@ def Access_Logits(output):
     probs = (torch.nn.functional.softmax(candidate_logits,dim=0,).detach().cpu().numpy())
     answer = {i: k for i, k in enumerate(["A", "B", "C", "D"])}[np.argmax(probs)]
 
-#Access_Logits(output)
-
-
-
-def Print_Output_logits(output):
-    logger.info(f'Output: {output[0].outputs[0].text}')
-    for idx, logit in enumerate(output[0].outputs[0].logprobs):
-        logger.info(f"Position #{idx}:")
-        for key, val in logit.items():
-            logger.info(f'\t{repr(val.decoded_token)}\t{val.rank}\t{val.logprob}\t{np.exp(val.logprob)}\t{key}')
-
 def Print_Prompt_logits(output):
     #import pdb; pdb.set_trace()
     logger.info(f'Prompt: {output[0].prompt}')
-    for idx, logit in enumerate(output[0].prompt_logprobs):
+    for idx, (prompt_tok_id, logit) in enumerate(zip(output[0].prompt_token_ids, output[0].prompt_logprobs)):
         logger.info(f"Position #{idx}:")
+        logger.info(f'\tPrompt_tok: {model.llm_engine.tokenizer.tokenizer.convert_ids_to_tokens(prompt_tok_id)}')
+        logger.info(f"\tTop_Logprobs:")
         if logit is None:
             continue
         for key, val in logit.items():
-            logger.info(f'\t{repr(val.decoded_token)}\t{val.rank}\t{val.logprob}\t{np.exp(val.logprob)}\t{key}')
+            logger.info(f'\t\t{repr(val.decoded_token):<20}\t{val.rank:6}\t{val.logprob:<20}\t{np.exp(val.logprob):<20}\t{key}')
+    logger.info('\n')
+
+def Print_Output_logits(output):
+    logger.info(f'Output: {output[0].outputs[0].text}')
+    for idx, (out_tok_id, logit) in enumerate(zip(output[0].outputs[0].token_ids, output[0].outputs[0].logprobs)):
+        logger.info(f"Position #{idx}:")
+        logger.info(f'\tDecode_tok: {model.llm_engine.tokenizer.tokenizer.convert_ids_to_tokens(out_tok_id)}')
+        logger.info(f"\tTop_Logprobs:")
+        for key, val in logit.items():
+            logger.info(f'\t\t{repr(val.decoded_token):<20}\t{val.rank:6}\t{val.logprob:<20}\t{np.exp(val.logprob):<20}\t{key}')
+    logger.info('\n')
 
 
 Print_Prompt_logits(output)
