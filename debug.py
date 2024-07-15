@@ -16,11 +16,11 @@ from vllm import LLM, SamplingParams
 #logging.basicConfig(filename='debug.log', level=logging.DEBUG, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logging.basicConfig(level=logging.INFO, format='')
 logger = logging.getLogger(__name__)
-file_handler = logging.FileHandler('debug.log')
+file_handler = logging.FileHandler('debug.log1')
 file_handler.setLevel(logging.INFO)
 logger.addHandler(file_handler)
 
-is_oldver_vllm = (vllm.__version__ < '0.5.0')
+is_oldver_vllm = (vllm.__version__ < '0.4.0')
 is_llama = True
 
 model = LLM(model='/home/dozhang/Llama-3/Meta-Llama-3-8B-Instruct', tensor_parallel_size=torch.cuda.device_count(), enforce_eager=True)
@@ -65,8 +65,11 @@ for i, layer_mask in enumerate(activation_mask):
         obj = model.llm_engine.driver_worker.model_runner.model.transformer.h[i].mlp
     obj.forward = MethodType(factory(layer_mask.to('cuda')), obj)
 
+thinking = "These equations don't follow the standard rules of arithmetic, so it looks like there's a hidden pattern or rule at play. Let's try to figure out the pattern based on the given examples:\n\n1. For 1 + 3 = 10:\n   - One possible interpretation is that the equation represents \( (1 + 3) \times 2 = 8 \), but this doesn't match 10.\n   - Another interpretation could be \( 1 + 3 + 6 = 10 \), where 6 might be an added constant, but this seems arbitrary.\n\n2. For 2 + 5 = 27:\n   - One approach is \( (2 + 5) \times 3 = 21 \), but this doesn't match 27.\n   - Another interpretation could be \( 2 + 5 + 20 = 27 \), where 20 is an added constant.\n\nGiven these interpretations, let's try a different approach to see if a consistent pattern emerges:\n   - Notice that the results seem to be significantly larger than the simple sum of the numbers.\n\nLet's consider the possibility that the equations might be based on a pattern involving multiplication:\n\n1. \( 1 + 3 = 10 \):\n   - \( 1 \times 3 + 3 \times 1 = 3 + 3 = 6 \) - this doesn't match 10.\n   - \( 1 + 3 = 4 \), but we need to reach 10.\n\n2. \( 2 + 5 = 27 \):\n   - \( 2 \times 5 + 5 \times 2 = 10 + 10 = 20 \) - this doesn't match 27.\n   - \( 2 + 5 = 7 \), but we need to reach 27.\n\nNow, let's try a pattern involving powers or exponents:\n\n1. \( 1 + 3 = 10 \):\n   - \( 1 + 3 = 4 \)\n   - Consider \( 4^2 - 6 = 10 \), where we square the sum and then subtract 6.\n\n2. \( 2 + 5 = 27 \):\n   - \( 2 + 5 = 7 \)\n   - Consider \( 7^2 - 22 = 27 \), where we square the sum and then subtract 22.\n\nThese adjustments seem arbitrary, but they suggest a possible pattern involving squaring:\n\nLet’s try to find a more systematic approach. Consider that each equation might be following a non-linear transformation:\n\n1. For \( 1 + 3 = 10 \):\n   - \( (1 + 3)^2 - 6 = 4^2 - 6 = 16 - 6 = 10 \).\n\n2. For \( 2 + 5 = 27 \):\n   - \( (2 + 5)^2 - 18 = 7^2 - 18 = 49 - 22 = 27 \).\n\nThis approach suggests a pattern of squaring the sum and then subtracting a specific number. Let’s apply this pattern to \( 3 + 4 \):\n\n- \( 3 + 4 = 7 \)\n- Square the sum: \( 7^2 = 49 \)\n- Determine the constant to subtract: For consistency, let’s subtract 22 as in the second example:\n  - \( 49 - 22 = 27 \)\n\nBut this doesn't match a consistent pattern. Let’s try another consistent subtraction:\n\nGiven the complexity, let’s use the pattern \( (a + b)^2 - (a + b) \):\n\n- For \( 1 + 3 = 10 \):\n  - \( (1 + 3)^2 - (1 + 3) = 4^2 - 4 = 16 - 6 = 10 \)."
+
 template = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n{instruction}<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
-query = "if 1+3=10 and 2+5=27, then 3+4=?"
+query = f"if 1+3=10 and 2+5=27, then 3+4=? ### Some hints: {thinking} ###"
+query = f"if 1+3=10 and 2+5=27, then 3+4="
 #query = template.format(instruction=query)
 output =  model.generate([query], sampling_params)
 #import pdb; pdb.set_trace()
