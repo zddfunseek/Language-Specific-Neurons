@@ -1,12 +1,5 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
-# All rights reserved.
-#
-# This source code is licensed under the terms described in the LICENSE file in
-# top-level folder for each specific model found within the models/ directory at
-# the top-level of this source tree.
-
-# Copyright (c) Meta Platforms, Inc. and affiliates.
-# This software may be used and distributed in accordance with the terms of the Llama 3 Community License Agreement.
+# This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
 
 import math
 from dataclasses import dataclass
@@ -17,10 +10,11 @@ import torch
 import torch.nn.functional as F
 from fairscale.nn.model_parallel.layers import (
     ColumnParallelLinear,
+    ParallelEmbedding,
     RowParallelLinear,
-    VocabParallelEmbedding,
 )
 from torch import nn
+
 
 @dataclass
 class ModelArgs:
@@ -54,7 +48,6 @@ class RMSNorm(torch.nn.Module):
         output = self._norm(x.float()).type_as(x)
         return output * self.weight
 
-
 def apply_scaling(freqs: torch.Tensor):
     # Values obtained from grid search
     scale_factor = 8
@@ -79,14 +72,12 @@ def apply_scaling(freqs: torch.Tensor):
             new_freqs.append((1 - smooth) * freq / scale_factor + smooth * freq)
     return torch.tensor(new_freqs, dtype=freqs.dtype, device=freqs.device)
 
-
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0, use_scaled: bool = False):
-
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
-    t = torch.arange(end, device=freqs.device, dtype=torch.float32)
+    t = torch.arange(end, device=freqs.device)  # type: ignore
     if use_scaled:
         freqs = apply_scaling(freqs)
-    freqs = torch.outer(t, freqs)
+    freqs = torch.outer(t, freqs).float()  # type: ignore
     freqs_cis = torch.polar(torch.ones_like(freqs), freqs)  # complex64
     return freqs_cis
 
@@ -209,9 +200,9 @@ class Attention(nn.Module):
         keys = repeat_kv(keys, self.n_rep)  # (bs, cache_len + seqlen, n_local_heads, head_dim)
         values = repeat_kv(values, self.n_rep)  # (bs, cache_len + seqlen, n_local_heads, head_dim)
 
-        xq = xq.transpose(1, 2)	# (bs, n_local_heads, seqlen, head_dim)
-        keys = keys.transpose(1, 2)	# (bs, n_local_heads, cache_len + seqlen, head_dim)
-        values = values.transpose(1, 2)	# (bs, n_local_heads, cache_len + seqlen, head_dim)
+        xq = xq.transpose(1, 2)  # (bs, n_local_heads, seqlen, head_dim)
+        keys = keys.transpose(1, 2) # (bs, n_local_heads, cache_len + seqlen, head_dim)
+        values = values.transpose(1, 2) # (bs, n_local_heads, cache_len + seqlen, head_dim)
         scores = torch.matmul(xq, keys.transpose(2, 3)) / math.sqrt(self.head_dim)
         if mask is not None:
             scores = scores + mask  # (bs, n_local_heads, seqlen, cache_len + seqlen)
@@ -274,7 +265,9 @@ class TransformerBlock(nn.Module):
         freqs_cis: torch.Tensor,
         mask: Optional[torch.Tensor],
     ):
-        h = x + self.attention(self.attention_norm(x), start_pos, freqs_cis, mask)
+        h = x + self.attention(
+            self.attention_norm(x), start_pos, freqs_cis, mask
+        )
         out = h + self.feed_forward(self.ffn_norm(h))
         return out
 
@@ -285,14 +278,21 @@ class Transformer(nn.Module):
         self.params = params
         self.vocab_size = params.vocab_size
         self.n_layers = params.n_layers
+        self.n_future_tokens = params.n_future_tokens
 
-        self.tok_embeddings = VocabParallelEmbedding(
+        self.tok_embeddings = ParallelEmbedding(
             params.vocab_size, params.dim, init_method=lambda x: x
         )
 
         self.layers = torch.nn.ModuleList()
-        for layer_id in range(params.n_layers):
+        for layer_id in range(params.n_layers - self.n_future_tokens + 1):
             self.layers.append(TransformerBlock(layer_id, params))
+
+        # Additional prediction heads for multi-token prediction.
+        # `layer_id` counts contiguously from the first Transformer block.
+        self.extra_heads = torch.nn.ModuleList()
+        for layer_id in range(self.n_layers - self.n_future_tokens + 1, self.n_layers):
+            self.extra_heads.append(TransformerBlock(layer_id, params))
 
         self.norm = RMSNorm(params.dim, eps=params.norm_eps)
         self.output = ColumnParallelLinear(
@@ -300,14 +300,13 @@ class Transformer(nn.Module):
         )
 
         self.freqs_cis = precompute_freqs_cis(
-            params.dim // params.n_heads,
-            params.max_seq_len * 2,
-            params.rope_theta,
-            params.use_scaled_rope,
+            # Note that self.params.max_seq_len is multiplied by 2 because the token limit for the Llama 2 generation of models is 4096. 
+            # Adding this multiplier instead of using 4096 directly allows for dynamism of token lengths while training or fine-tuning.
+            self.params.dim // self.params.n_heads, self.params.max_seq_len * 2, theta=self.params.rope_theta
         )
 
     @torch.inference_mode()
-    def forward(self, tokens: torch.Tensor, start_pos: int):
+    def forward(self, tokens: torch.Tensor, start_pos: int, return_all_heads: bool = False):
         _bsz, seqlen = tokens.shape
         h = self.tok_embeddings(tokens)
         self.freqs_cis = self.freqs_cis.to(h.device)
@@ -315,7 +314,9 @@ class Transformer(nn.Module):
 
         mask = None
         if seqlen > 1:
-            mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
+            mask = torch.full(
+                (seqlen, seqlen), float("-inf"), device=tokens.device
+            )
 
             mask = torch.triu(mask, diagonal=1)
 
@@ -323,12 +324,25 @@ class Transformer(nn.Module):
             # only for the new sequence. Thus, the matrix of scores is of size
             # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
             # j > cache_len + i, since row i corresponds to token cache_len + i.
-            mask = torch.hstack(
-	        [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
-            ).type_as(h)
+            mask = torch.hstack([
+                torch.zeros((seqlen, start_pos), device=tokens.device),
+                mask
+            ]).type_as(h)
 
-        for layer in self.layers:
+        # Model trunk.
+        for layer in self.layers[:-1]:
             h = layer(h, start_pos, freqs_cis, mask)
+        h_trunk = h
+
+        # Prediction heads.
+        latents = []
+        n_heads_to_use = self.n_future_tokens if return_all_heads else 1
+        prediction_heads = [self.layers[-1]] + list(self.extra_heads)
+        for layer in prediction_heads[:n_heads_to_use]:
+            h = layer(h_trunk, start_pos, freqs_cis, mask)
+            latents.append(h)
+
+        h = torch.stack(latents, dim=-2)  # (_bsz, seqlen, n_heads_to_use, dim)
         h = self.norm(h)
         output = self.output(h).float()
         return output
