@@ -105,6 +105,8 @@ class Llama:
     def __init__(self, model: Transformer, tokenizer: Tokenizer):
         self.model = model
         self.tokenizer = tokenizer
+        import pdb; pdb.set_trace()
+        self.stop_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in ["</s>", "<|eot_id|>", "<|end_of_text|>", "<|end_header_id|>", "<|start_header_id|>"]]
 
     @torch.inference_mode()
     def generate(
