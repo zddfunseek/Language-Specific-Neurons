@@ -83,7 +83,7 @@ class Llama:
             checkpoints
         ), f"Loading a checkpoint for MP={len(checkpoints)} but world size is {model_parallel_size}"
         ckpt_path = checkpoints[get_model_parallel_rank()]
-        checkpoint = torch.load(ckpt_path, map_location="cpu")
+        checkpoint = torch.load(ckpt_path, map_location="cuda")
         with open(Path(ckpt_dir) / "params.json", "r") as f:
             params = json.loads(f.read())
 
@@ -105,8 +105,6 @@ class Llama:
     def __init__(self, model: Transformer, tokenizer: Tokenizer):
         self.model = model
         self.tokenizer = tokenizer
-        import pdb; pdb.set_trace()
-        self.stop_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in ["</s>", "<|eot_id|>", "<|end_of_text|>", "<|end_header_id|>", "<|start_header_id|>"]]
 
     @torch.inference_mode()
     def generate(
@@ -167,9 +165,8 @@ class Llama:
                     reduction="none",
                     ignore_index=pad_id,
                 )
-            eos_reached |= (~input_text_mask[:, cur_pos]) & (
-                next_token == self.tokenizer.eos_id
-            )
+            #eos_reached |= (~input_text_mask[:, cur_pos]) & (next_token == self.tokenizer.eos_id)
+            eos_reached |= (~input_text_mask[:, cur_pos]) & (next_token in self.tokenizer.stop_tokens)
             prev_pos = cur_pos
             if all(eos_reached):
                 break
@@ -185,8 +182,15 @@ class Llama:
             if logprobs:
                 probs = token_logprobs[i][start : len(prompt_tokens[i]) + max_gen_len]
             # cut to eos tok if any
-            if self.tokenizer.eos_id in toks:
-                eos_idx = toks.index(self.tokenizer.eos_id)
+            ### zdd: adapting checking stop by a set of stop tokens instead of a single token
+            eos_idx = None
+            for i, _tok in enumerate(toks):
+                if _tok in self.tokenizer.stop_tokens:
+                    eos_idx = i
+                    break
+            #if self.tokenizer.eos_id in toks:
+            if eos_idx is not None:
+                #eos_idx = toks.index(self.tokenizer.eos_id)
                 toks = toks[:eos_idx]
                 probs = probs[:eos_idx] if logprobs else None
             out_tokens.append(toks)
