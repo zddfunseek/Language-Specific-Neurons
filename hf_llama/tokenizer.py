@@ -102,7 +102,6 @@ class tik_Tokenizer:
         self.python_tag_id = self.special_tokens["<|python_tag|>"]
         self.pad_id: int = self.special_tokens["<|finetune_right_pad_id|>"]
         self.stop_tokens = [self.eos_id, self.eot_id, self.eom_id, self.eoh_id, self.pad_id] ### zdd: collect stop tokens for early stoping generation
-        import pdb; pdb.set_trace()
 
     def encode(
         self,
