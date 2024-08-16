@@ -24,7 +24,7 @@ is_Debug = True
 glob_posi = 0
 Flag = True
 
-#model = LLM(model='/home/dozhang/Llama-3/Meta-Llama-3-8B-Instruct', tensor_parallel_size=torch.cuda.device_count(), enforce_eager=True, dtype=torch.float16)
+#model = LLM(model='/home/dozhang/nlcmt1/HuggingfaceModels/Meta-Llama-3.1-70B-Instruct', tensor_parallel_size=torch.cuda.device_count(), enforce_eager=True, dtype=torch.float16)
 model = LLM(model='/home/dozhang/nlcmt1/HuggingfaceModels/Meta-Llama-3.1-8B-Instruct', tensor_parallel_size=torch.cuda.device_count(), enforce_eager=True, dtype=torch.float16)
 sampling_params = SamplingParams(temperature=0, repetition_penalty=1.1, max_tokens = 2048, stop = ["</s>", "<|eot_id|>", "<|end_of_text|>", "<|end_header_id|>", "<|start_header_id|>"], logprobs=5, prompt_logprobs=5)
 

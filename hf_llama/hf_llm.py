@@ -1,5 +1,6 @@
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, StoppingCriteria, StoppingCriteriaList
+from hf_model_adapt import hf_adapt
 
 class StopTokenCriteria(StoppingCriteria):
     def __init__(self, stop_token_id):
@@ -28,7 +29,10 @@ attention_mask = inputs.attention_mask
 stop_token_id = tokenizer.convert_tokens_to_ids(["</s>", "<|eot_id|>", "<|end_of_text|>", "<|end_header_id|>", "<|start_header_id|>"])
 stopping_criteria = StoppingCriteriaList([StopTokenCriteria(stop_token_id)])
 
-import pdb; pdb.set_trace()
+### Todo: complete hf_adapt 
+# import pdb; pdb.set_trace()
+# (model, sum1, sum2, sum3, over_zero, flat_zero) = hf_adapt(model)
+
 # Generate text
 outputs = model.generate(inputs["input_ids"], attention_mask=attention_mask, max_length=2048, num_return_sequences=1, 
                          pad_token_id=tokenizer.eos_token_id, stopping_criteria=stopping_criteria)
