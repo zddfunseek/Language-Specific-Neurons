@@ -124,7 +124,7 @@ def llama_adapt(model):
             # if is_Debug and positions[0] == 23:
             #     global Flag
             #     Flag = True
-            import pdb; pdb.set_trace()
+            #import pdb; pdb.set_trace()
             qkv, _ = self.qkv_proj(hidden_states)
             q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
             q, k = self.rotary_emb(positions, q, k)

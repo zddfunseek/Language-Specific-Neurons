@@ -6,6 +6,7 @@ from typing import Optional
 import fire
 
 from ori_generation import Llama
+from ori_model_adapt import ori_adapt
 
 
 def main(
@@ -24,6 +25,7 @@ def main(
         max_batch_size=max_batch_size,
     )
 
+    (generator, sum1, sum2, sum3, over_zero, flat_zero) = ori_adapt(generator)
 
     prompts = ["<|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nKylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?<|eot_id|><|start_header_id|>assistant<|end_header_id|>"]
     
@@ -31,7 +33,7 @@ def main(
 
     prompts = ["<|start_header_id|>system<|end_header_id|><|eot_id|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
 
-    prompts = ["Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
+    prompts = ["<|eot_id|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
 
     results = generator.text_completion(
         prompts,
