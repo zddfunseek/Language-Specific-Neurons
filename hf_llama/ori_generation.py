@@ -16,9 +16,9 @@ from fairscale.nn.model_parallel.initialize import (
     model_parallel_is_initialized,
 )
 
-from model import ModelArgs, Transformer
+from ori_model import ModelArgs, Transformer
 
-from tokenizer import tik_Tokenizer as Tokenizer
+from ori_tokenizer import tik_Tokenizer as Tokenizer
 #from tokenizer import sp_Tokenizer as Tokenizer
 
 Role = Literal["system", "user", "assistant"]

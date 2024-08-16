@@ -5,7 +5,7 @@ from typing import Optional
 
 import fire
 
-from generation import Llama
+from ori_generation import Llama
 
 
 def main(
