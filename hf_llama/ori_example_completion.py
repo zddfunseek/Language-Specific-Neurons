@@ -12,8 +12,8 @@ from ori_model_adapt import ori_adapt
 def main(
     ckpt_dir: str,
     tokenizer_path: str,
-    temperature: float = 0.2,
-    top_p: float = 0.9,
+    temperature: float = 0, #0.2,
+    top_p: float = 1, #0.9,
     max_seq_len: int = 2048,
     max_batch_size: int = 4,
     max_gen_len: Optional[int] = None,
@@ -34,6 +34,14 @@ def main(
     prompts = ["<|start_header_id|>system<|end_header_id|><|eot_id|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
 
     prompts = ["<|eot_id|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
+
+    prompts = ["<|begin_of_text|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
+
+    prompts = ["1+2=?"]
+
+    prompts = ["Kylar, Store, Glasses Apartment. Cost, $5, Price. Discount, 60%. Quantity, 16, glasses <|end_of_text|>. How much does he need to pay for them?"]
+
+    
 
     results = generator.text_completion(
         prompts,

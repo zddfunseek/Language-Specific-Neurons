@@ -16,6 +16,7 @@ from fairscale.nn.model_parallel.initialize import (
     model_parallel_is_initialized,
 )
 
+import random
 from ori_model import ModelArgs, Transformer
 
 from ori_tokenizer import tik_Tokenizer as Tokenizer
@@ -208,7 +209,12 @@ class Llama:
     ) -> List[CompletionPrediction]:
         if max_gen_len is None:
             max_gen_len = self.model.params.max_seq_len - 1
+        #import pdb; pdb.set_trace()
         prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in prompts]
+        # prompt_tokens = [self.tokenizer.encode(x, bos=False, eos=False) for x in prompts]
+        # prompt_tokens[0].insert(random.randint(0, len(prompt_tokens[0])), 128000)
+        # prompt_tokens[0].insert(random.randint(0, len(prompt_tokens[0])), 128001)
+        print (f'### Prompt_ids: {prompt_tokens}\n')
         generation_tokens, generation_logprobs = self.generate(
             prompt_tokens=prompt_tokens,
             max_gen_len=max_gen_len,
