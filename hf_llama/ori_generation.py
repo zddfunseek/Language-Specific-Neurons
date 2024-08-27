@@ -125,7 +125,7 @@ class Llama:
         max_prompt_len = max(len(t) for t in prompt_tokens)
         assert max_prompt_len <= params.max_seq_len
         total_len = min(params.max_seq_len, max_gen_len + max_prompt_len)
-
+        
         pad_id = self.tokenizer.pad_id
         tokens = torch.full((bsz, total_len), pad_id, dtype=torch.long, device="cuda")
         for k, t in enumerate(prompt_tokens):
@@ -145,6 +145,9 @@ class Llama:
                 ignore_index=pad_id,
             )
 
+        #import pdb; pdb.set_trace()
+        # 新增的 rank 张量
+        token_ranks = torch.zeros(tokens.shape, dtype=torch.long)
         for cur_pos in range(min_prompt_len, total_len):
             logits = self.model.forward(tokens[:, prev_pos:cur_pos], prev_pos).squeeze(2)
             if temperature > 0:
@@ -154,11 +157,29 @@ class Llama:
                 next_token = torch.argmax(logits[:, -1], dim=-1)
 
             next_token = next_token.reshape(-1)
+
             # only replace token if prompt has already been generated
             next_token = torch.where(
                 input_text_mask[:, cur_pos], tokens[:, cur_pos], next_token
             )
             tokens[:, cur_pos] = next_token
+
+            ### zdd, 计算 next_token 的 rank
+            if logprobs:
+                echo = True
+            if echo:
+                if prev_pos < 1:
+                    for ptx in range(cur_pos):
+                        sorted_logits, sorted_indices = torch.sort(logits[:, ptx], descending=True)
+                        ranks = (sorted_indices == tokens[:, ptx].unsqueeze(-1)).nonzero(as_tuple=True)[1] + 1        
+                        # 存储 rank 值
+                        token_ranks[:, ptx] = ranks
+                else:
+                    sorted_logits, sorted_indices = torch.sort(logits[:, -1], descending=True)
+                    ranks = (sorted_indices == next_token.unsqueeze(-1)).nonzero(as_tuple=True)[1] + 1        
+                    # 存储 rank 值
+                    token_ranks[:, prev_pos] = ranks
+
             if logprobs:
                 token_logprobs[:, prev_pos + 1 : cur_pos + 1] = -F.cross_entropy(
                     input=logits.transpose(1, -1),
@@ -174,7 +195,8 @@ class Llama:
 
         if logprobs:
             token_logprobs = token_logprobs.tolist()
-        out_tokens, out_logprobs = [], []
+        out_tokens, out_logprobs, out_ranks = [], [], []
+        
         for i, toks in enumerate(tokens.tolist()):
             # cut to max gen len
             start = 0 if echo else len(prompt_tokens[i])
@@ -185,9 +207,9 @@ class Llama:
             # cut to eos tok if any
             ### zdd: adapting checking stop by a set of stop tokens instead of a single token
             eos_idx = None
-            for i, _tok in enumerate(toks):
+            for _k, _tok in enumerate(toks):
                 if _tok in self.tokenizer.stop_tokens:
-                    eos_idx = i
+                    eos_idx = _k
                     break
             #if self.tokenizer.eos_id in toks:
             if eos_idx is not None:
@@ -196,7 +218,8 @@ class Llama:
                 probs = probs[:eos_idx] if logprobs else None
             out_tokens.append(toks)
             out_logprobs.append(probs)
-        return (out_tokens, out_logprobs if logprobs else None)
+            out_ranks.append(token_ranks[i,:len(prompt_tokens[i])+5])
+        return (out_tokens, out_logprobs if logprobs else None, out_ranks if echo else None)
 
     def text_completion(
         self,
@@ -215,7 +238,7 @@ class Llama:
         # prompt_tokens[0].insert(random.randint(0, len(prompt_tokens[0])), 128000)
         # prompt_tokens[0].insert(random.randint(0, len(prompt_tokens[0])), 128001)
         print (f'### Prompt_ids: {prompt_tokens}\n')
-        generation_tokens, generation_logprobs = self.generate(
+        generation_tokens, generation_logprobs, generation_ranks = self.generate(
             prompt_tokens=prompt_tokens,
             max_gen_len=max_gen_len,
             temperature=temperature,
@@ -227,10 +250,11 @@ class Llama:
             return [
                 {
                     "generation": self.tokenizer.decode(t),
-                    "tokens": [self.tokenizer.decode(x) for x in t],
+                    "tokens": [self.tokenizer.decode([x]) for x in t],
                     "logprobs": logprobs_i,
+                    "rank": rank_i
                 }
-                for t, logprobs_i in zip(generation_tokens, generation_logprobs)
+                for t, logprobs_i, rank_i in zip(generation_tokens, generation_logprobs, generation_ranks)
             ]
         return [{"generation": self.tokenizer.decode(t)} for t in generation_tokens]
 

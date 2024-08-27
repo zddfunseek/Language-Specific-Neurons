@@ -35,11 +35,15 @@ def main(
 
     prompts = ["<|eot_id|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
 
-    prompts = ["<|begin_of_text|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
+    
 
     prompts = ["1+2=?"]
 
     prompts = ["Kylar, Store, Glasses Apartment. Cost, $5, Price. Discount, 60%. Quantity, 16, glasses <|end_of_text|>. How much does he need to pay for them?"]
+
+    prompts = ["<|begin_of_text|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
+
+    prompts = ["<|begin_of_text|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
 
     
 
@@ -48,10 +52,15 @@ def main(
         max_gen_len=max_gen_len,
         temperature=temperature,
         top_p=top_p,
+        logprobs=True,
+        echo=True,
     )
     for prompt, result in zip(prompts, results):
         print(prompt)
         print(f">>> {result['generation']}")
+        print(f">>> {result['tokens']}")
+        print(f">>> {result['rank']}")
+        print(f">>> {result['logprobs']}")
         print("==================================")
 
 
