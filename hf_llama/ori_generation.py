@@ -1,10 +1,15 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This software may be used and distributed according to the terms of the Llama 2 Community License Agreement.
 
+'''
+https://github.com/meta-llama/llama/blob/main/llama/generation.py
+'''
+
 import json
 import os
 import sys
 import time
+import numpy as np
 from pathlib import Path
 from typing import List, Literal, Optional, Tuple, TypedDict
 
@@ -169,6 +174,9 @@ class Llama:
                 echo = True
             if echo:
                 if prev_pos < 1:
+                    ### zdd, display predicted prompt tokens by LLM
+                    # predicted_prompt_tokens = torch.argmax(logits[:, :], dim=-1)
+                    # tokens[:, :cur_pos] = predicted_prompt_tokens
                     for ptx in range(cur_pos):
                         sorted_logits, sorted_indices = torch.sort(logits[:, ptx], descending=True)
                         ranks = (sorted_indices == tokens[:, ptx].unsqueeze(-1)).nonzero(as_tuple=True)[1] + 1        
@@ -195,6 +203,8 @@ class Llama:
 
         if logprobs:
             token_logprobs = token_logprobs.tolist()
+            token_logprobs = np.round(np.exp(token_logprobs), decimals=3)
+
         out_tokens, out_logprobs, out_ranks = [], [], []
         
         for i, toks in enumerate(tokens.tolist()):
@@ -204,18 +214,24 @@ class Llama:
             probs = None
             if logprobs:
                 probs = token_logprobs[i][start : len(prompt_tokens[i]) + max_gen_len]
+            
             # cut to eos tok if any
+            # if self.tokenizer.eos_id in toks:
+            #     eos_idx = toks.index(self.tokenizer.eos_id)
+            #     toks = toks[:eos_idx]
+            #     probs = probs[:eos_idx] if logprobs else None
             ### zdd: adapting checking stop by a set of stop tokens instead of a single token
             eos_idx = None
             for _k, _tok in enumerate(toks):
                 if _tok in self.tokenizer.stop_tokens:
                     eos_idx = _k
                     break
-            #if self.tokenizer.eos_id in toks:
             if eos_idx is not None:
-                #eos_idx = toks.index(self.tokenizer.eos_id)
                 toks = toks[:eos_idx]
                 probs = probs[:eos_idx] if logprobs else None
+
+            
+
             out_tokens.append(toks)
             out_logprobs.append(probs)
             out_ranks.append(token_ranks[i,:len(prompt_tokens[i])+5])
@@ -233,11 +249,11 @@ class Llama:
         if max_gen_len is None:
             max_gen_len = self.model.params.max_seq_len - 1
         #import pdb; pdb.set_trace()
-        prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=False) for x in prompts]
+        prompt_tokens = [self.tokenizer.encode(x, bos=True, eos=True) for x in prompts]
         # prompt_tokens = [self.tokenizer.encode(x, bos=False, eos=False) for x in prompts]
         # prompt_tokens[0].insert(random.randint(0, len(prompt_tokens[0])), 128000)
         # prompt_tokens[0].insert(random.randint(0, len(prompt_tokens[0])), 128001)
-        print (f'### Prompt_ids: {prompt_tokens}\n')
+        #print (f'### Prompt_ids: {prompt_tokens}\n')
         generation_tokens, generation_logprobs, generation_ranks = self.generate(
             prompt_tokens=prompt_tokens,
             max_gen_len=max_gen_len,
