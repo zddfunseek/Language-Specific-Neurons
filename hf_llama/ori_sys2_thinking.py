@@ -17,12 +17,6 @@ class TextProcessor:
         self.top_p = top_p
         self.max_gen_len = max_gen_len
 
-    def clear_generator_cache(self):
-        if hasattr(self.generator, 'clear_cache'):
-            self.generator.clear_cache()
-        else:
-            print("No clear_cache method available.")
-
     def splitsent(self, input_text):
         pattern = r'(?<!\w\.\w.)(?<!\d\.)(?<![A-Z]\.)(?<=\.|\?)(?=\s|$)'
         sentences = re.split(pattern, input_text)
@@ -30,9 +24,7 @@ class TextProcessor:
         return sentences
 
     def f(self, prompts):
-        # 每次生成前清空缓存
-        self.clear_generator_cache()
-        
+        import pdb; pdb.set_trace()
         results = self.generator.text_completion(
             prompts,
             max_gen_len=self.max_gen_len,
@@ -50,10 +42,11 @@ class TextProcessor:
             s_1_to_i = ' '.join(sentences[:i + 1])
             r_i = self.f([s_1_to_i])
             sub_r_i = self.splitsent(r_i)
-            thinking = ' '.join(sub_r_i[:1])
+            thinking = ' '.join(sub_r_i[:1])[:512]
             results.append(f"{sentences[i]} (<thought>{thinking}</thought>)")
         results.append(sentences[-1])
         final_input = ' '.join(results)
+
         final_result = self.f([final_input])
 
         return final_result
@@ -79,11 +72,10 @@ def main(
 
     processor = TextProcessor(generator, temperature, top_p, max_gen_len)
 
-    import pdb; pdb.set_trace()
     # 示例输入
-    input_text = "Dr. Smith is a renowned scientist. Is this the first sentence? This is the second sentence. The total was 10.5. And what about this?"
+    input_text = "Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"
     final_output = processor.process_text(input_text)
-
+    
     for prompt, result in zip([input_text], final_output):
         print(prompt)
         print(f">>> Result: {result['generation']}")
