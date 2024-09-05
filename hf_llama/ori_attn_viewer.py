@@ -1,9 +1,11 @@
 import argparse
 import os
 import math
+import numpy as np
 from tqdm import tqdm
 import torch
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 import seaborn as sns
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
@@ -20,26 +22,39 @@ def plot_heatmap(attention_scores, model_id, plot_figs_per_head, save_fig_path, 
         attention_scores = [attention_scores[i][:, :, 1: , 1: ] for i in range(len(attention_scores))]
         tokens_list = tokens_list[1: ]
 
-    import pdb; pdb.set_trace()
     if layer_focus is None:
         layer_focus = [x for x in range(len(attention_scores))]
     else:
-        layer_focus = [int(x) for x in layer_focus if x!=',']
+        layer_focus = [i for part in layer_focus.split(',') for i in (range(int(part.split('-')[0]), int(part.split('-')[1]) + 1) if '-' in part else [int(part)])]
 
+    #import pdb; pdb.set_trace()
     # a figure for all
-    print(f'plotting a figure for all layers ...')
-    num_heads = len(attention_scores)
-    num_rows = math.ceil(num_heads / num_figs_per_row) 
+    print(f'plotting a figure for either the specified or all layers by default ...')
+    num_layers = len(layer_focus)
+    num_rows = math.ceil(num_layers / num_figs_per_row) 
     fig, axes = plt.subplots(num_rows, num_figs_per_row, figsize=(len(tokens_list) * 2, 0.5 * num_rows * len(tokens_list)))
-    for layer_idx in tqdm(layer_focus):
-        row, col = layer_idx // num_figs_per_row, layer_idx % num_figs_per_row
+    #fig, axes = plt.subplots(num_rows, num_figs_per_row, figsize=(len(tokens_list), num_rows * len(tokens_list)))
+    axes = np.reshape(axes,(num_rows,num_figs_per_row))
+    # 创建自定义颜色映射
+    # mycolors = ['darkblue', 'blue', 'lightblue', 'white']  # 从深到浅的颜色
+    # mycolors = ['#ffffff', '#e6f2ff', '#cce5ff', '#99ccff', '#66b3ff', '#3399ff', '#007acc', '#0059b3', '#003d80', '#002966']
+    mycolors = ['#f2f9ff', '#cce5ff', '#66b3ff', '#3399ff', '#1f8cff', '#007acc', '#0059b3', '#003d80', '#002966', '#001a66', '#001233', '#000f1a', '#000b0b']
+    mycmap = mcolors.LinearSegmentedColormap.from_list('custom_cmap', mycolors)
+    #for layer_idx in tqdm(layer_focus):
+    for _id, layer_idx in tqdm(enumerate(layer_focus)):
+        row, col = _id // num_figs_per_row, _id % num_figs_per_row
         avg_attention_scores = attention_scores[layer_idx][0].mean(dim=0)    # [ seq_len, seq_len]
+        # avg_attention_scores, _ = attention_scores[layer_idx][0].max(dim=0)    # [ seq_len, seq_len]
+        # avg_attention_scores = attention_scores[layer_idx][0].std(dim=0)    # [ seq_len, seq_len]
         mask = torch.triu(torch.ones_like(avg_attention_scores, dtype=torch.bool), diagonal=1)
-        sns.heatmap(avg_attention_scores.numpy(), mask=mask.numpy(), cmap='RdBu_r', square=True, xticklabels=tokens_list, yticklabels=tokens_list, ax=axes[row, col])
-        axes[row, col].set_title(f'layer {layer_idx}')
+        sns.heatmap(avg_attention_scores.numpy(), mask=mask.numpy(), cmap=mycmap, square=True, xticklabels=tokens_list, yticklabels=tokens_list, ax=axes[row, col])
+        axes[row, col].set_title(f'layer {layer_idx}', fontsize=45)
+        axes[row, col].tick_params(axis='both', labelsize=20) 
+        #axes[row, col].set_xlabel('X Axis', fontsize=16)
+        #axes[row, col].set_ylabel('Y Axis', fontsize=16)
 
-    plt.suptitle(f'all layers avg') 
-    plt.savefig(os.path.join(save_fig_path_model, f'all_layers_avg.jpg'))
+    plt.suptitle(f'avg_{min(layer_focus)}-{max(layer_focus)}') 
+    plt.savefig(os.path.join(save_fig_path_model, f'avg_{min(layer_focus)}-{max(layer_focus)}.jpg'))
     plt.close()   
 
     if not plot_figs_per_head:
@@ -51,12 +66,13 @@ def plot_heatmap(attention_scores, model_id, plot_figs_per_head, save_fig_path, 
         num_heads = attention_scores[layer_idx].shape[1]
         num_rows = math.ceil(num_heads / num_figs_per_row)
         fig, axes = plt.subplots(num_rows, num_figs_per_row, figsize=(len(tokens_list) * 2, 0.5 * num_rows * len(tokens_list)))
+        axes = np.atleast_2d(axes)
         for head_idx in tqdm(range(num_heads)):
             row, col = head_idx // num_figs_per_row, head_idx % num_figs_per_row
             head_attention_scores = attention_scores[layer_idx][0][head_idx]    # [seq_len, seq_len]
             mask = torch.triu(torch.ones_like(head_attention_scores, dtype=torch.bool), diagonal=1)
-            sns.heatmap(head_attention_scores.numpy(), mask=mask.numpy(), cmap='RdBu_r', square=True, xticklabels=tokens_list, yticklabels=tokens_list, ax=axes[row, col])
-            axes[row, col].set_title(f'head {head_idx}')
+            sns.heatmap(head_attention_scores.numpy(), mask=mask.numpy(), cmap=mycmap, square=True, xticklabels=tokens_list, yticklabels=tokens_list, ax=axes[row, col])
+            axes[row, col].set_title(f'head {head_idx}', fontsize=45)
 
         plt.suptitle(f'layer_{layer_idx}') 
         plt.savefig(os.path.join(save_fig_path_model, f'layer_{layer_idx}.jpg'))
@@ -91,6 +107,7 @@ def view_attention(
         inputs = tokenizer(prompt, return_tensors="pt")['input_ids'].to(model.device)
         tokens_list = list(map(lambda x:x.replace('▁',''), tokenizer.convert_ids_to_tokens(inputs[0].cpu())))   # used as labels when plotting
         print("* Generating ...")
+        import pdb; pdb.set_trace()
         with torch.no_grad():
             attention_scores = model(inputs, output_attentions=True)['attentions'] # a list containing 32 layers' attention scores, each is a tensor with shape [1, num_heads, seq_len, seq_len]
         attention_scores = [attention_scores_layer.detach().cpu() for attention_scores_layer in attention_scores]
@@ -117,7 +134,7 @@ def view_attention(
 parser = argparse.ArgumentParser()
 # model config
 parser.add_argument('--model_path', required=True, help='the path of the model')
-parser.add_argument('--model_id', required=True, help='the name you give to the model')
+parser.add_argument('--model_id', type=str, default=None, help='the name you give to the model')
 # input config
 parser.add_argument('--prompt', default='Summer is warm. Winter is cold.\n')
 parser.add_argument('--ignore_first_token', action='store_true', help='whether to ignore the start token when plotting')
@@ -129,7 +146,7 @@ parser.add_argument('--load_attention_scores_path', default=None, help='if speci
 parser.add_argument('--plot_figs_per_head', action='store_true', help='whether to plot heatmap for each head')
 parser.add_argument('--save_fig_path', default='./vis')
 parser.add_argument('--num_figs_per_row', type=int, default=4)
-parser.add_argument('--layer_focus', type=list, default=None, help='a list of layer index')
+parser.add_argument('--layer_focus', type=str, default=None, help='a list of layer index')
 args = parser.parse_args()
 
 
@@ -146,7 +163,7 @@ if __name__ == "__main__":
         # visualize attention
         view_attention(
             model=model,  # the model object
-            model_id=args.model_id,
+            model_id=os.path.basename(args.model_path) if args.model_id is None else args.model_id,
             tokenizer=tokenizer,
             prompt=args.prompt,
             save_attention_scores=args.save_attention_scores,

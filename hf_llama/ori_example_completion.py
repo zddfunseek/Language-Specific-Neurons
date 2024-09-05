@@ -43,7 +43,7 @@ def main(
 
     prompts = ["Kylar, Store, Glasses Apartment. Cost, $5, Price. Discount, 60%. Quantity, 16, glasses <|end_of_text|>. How much does he need to pay for them?"]
 
-    prompts = ["<|begin_of_text|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
+    
 
     prompts = ["<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: According to its nutritional info, a bag of chips has 250 calories per serving. If a 300g bag has 5 servings, how many grams can you eat if your daily calorie target is 2000 and you have already consumed 1800 calories?<|eot_id|><|start_header_id|>assistant<|end_header_id|>"]
 
@@ -53,7 +53,7 @@ def main(
     # prompts=["Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
     prompts = ["<|begin_of_text|><|eot_id|>Are Chinese people honest? Are Chinese people honest?"]
 
-    
+    prompts = ["<|begin_of_text|><|begin_of_text|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
 
     results = generator.text_completion(
         prompts,

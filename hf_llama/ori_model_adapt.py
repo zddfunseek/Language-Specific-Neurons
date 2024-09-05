@@ -41,6 +41,7 @@ def ori_adapt(model):
 
     def Emb_factory():
         def Emb_forward(self, input_: torch.Tensor) -> torch.Tensor:  # type: ignore
+            #import pdb; pdb.set_trace()
             # Build the mask.
             input_mask = (input_ < self.vocab_start_index) | (input_ >= self.vocab_end_index)
             # Mask the input.
@@ -123,6 +124,38 @@ def ori_adapt(model):
             return x
 
         return Ffn_forward
+    
+    def Infer_factory(posIdx = 891200, layerIdx = 1024):
+        def Infer_forward(self, tokens: torch.Tensor, start_pos: int):
+            bsz, seqlen = tokens.shape
+            hs = self.tok_embeddings(tokens)
+            self.freqs_cis = self.freqs_cis.to(hs.device)
+            freqs_cis = self.freqs_cis[start_pos : start_pos + seqlen]
+
+            mask = None
+            if seqlen > 1:
+                mask = torch.full((seqlen, seqlen), float("-inf"), device=tokens.device)
+
+                mask = torch.triu(mask, diagonal=1)
+
+                mask = torch.hstack(
+                [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
+                ).type_as(hs)
+
+            #import pdb; pdb.set_trace()
+            nLayer = 0
+            for layer in self.layers:
+                hs = layer(hs, start_pos, freqs_cis, mask)
+                if start_pos >= posIdx and nLayer >= layerIdx:
+                    #import pdb; pdb.set_trace()
+                    break
+                nLayer = nLayer + 1
+
+            hs = self.norm(hs)
+            output = self.output(hs).float()
+            return output
+        
+        return Infer_forward
 
 
     embobj = model.model.tok_embeddings
@@ -134,4 +167,7 @@ def ori_adapt(model):
         ffnobj = model.model.layers[i].feed_forward
         ffnobj.forward = MethodType(Ffn_factory(i), ffnobj)
     
+    modelobj = model.model
+    modelobj.forward = MethodType(Infer_factory(145, 25), modelobj)
+
     return model, sum1, sum2, sum3, over_zero, flat_zero
