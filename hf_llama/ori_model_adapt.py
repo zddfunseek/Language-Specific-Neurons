@@ -158,7 +158,7 @@ def ori_adapt(model):
                     break
                 nLayer = nLayer + 1
 
-            if cos_sim[:,-1] < 0:
+            if cos_sim[:,-1] < 0.8:
                 xLayerUsed = 25
                 for _k in range(32):
                     if start_pos < 20 or cos_sim[:,-1] > 0.98:
@@ -187,6 +187,6 @@ def ori_adapt(model):
         ffnobj.forward = MethodType(Ffn_factory(i), ffnobj)
     
     modelobj = model.model
-    modelobj.forward = MethodType(Infer_factory(145, 24), modelobj)
+    modelobj.forward = MethodType(Infer_factory(145, 242), modelobj)
 
     return model, sum1, sum2, sum3, over_zero, flat_zero

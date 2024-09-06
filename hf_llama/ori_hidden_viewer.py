@@ -149,6 +149,7 @@ args = parser.parse_args()
 if __name__ == "__main__":
 
     # load model and tokenizer
+    #import pdb; pdb.set_trace()
     config = AutoConfig.from_pretrained(args.model_path)
     config._attn_implementation = "eager"    # use vanilla attention to return attention weights
     kwargs = {"torch_dtype": torch.float16, "device_map": "auto"}

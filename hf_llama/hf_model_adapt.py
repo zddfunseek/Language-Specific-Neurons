@@ -49,6 +49,16 @@ from vllm.model_executor.sampling_metadata import SamplingMetadata
 from vllm.sequence import IntermediateTensors, SamplerOutput
 from vllm.utils import is_hip, print_warning_once
 
+from transformers.cache_utils import Cache, DynamicCache, StaticCache
+from transformers.modeling_outputs import (
+    BaseModelOutputWithPast,
+    CausalLMOutputWithPast,
+    QuestionAnsweringModelOutput,
+    SequenceClassifierOutputWithPast,
+    TokenClassifierOutput,
+)
+
+
 def Emb_factory(noise_scale=1e-1):
     def Embed_forward(self, input_):
         #import pdb; pdb.set_trace()
@@ -155,43 +165,135 @@ def hf_adapt(model):
     def Model_factory():
         def model_forward(
             self,
-            input_ids: Optional[torch.Tensor],
-            positions: torch.Tensor,
-            kv_caches: List[torch.Tensor],
-            attn_metadata: AttentionMetadata,
-            intermediate_tensors: Optional[IntermediateTensors],
-            inputs_embeds: Optional[torch.Tensor] = None,
-        ) -> Union[torch.Tensor, IntermediateTensors]:
-            #import pdb; pdb.set_trace()
-            if get_pp_group().is_first_rank:
-                if inputs_embeds is not None:
-                    hidden_states = inputs_embeds
-                else:
-                    hidden_states = self.get_input_embeddings(input_ids)
-                residual = None
-            else:
-                assert intermediate_tensors is not None
-                hidden_states = intermediate_tensors["hidden_states"]
-                residual = intermediate_tensors["residual"]
+            input_ids: torch.LongTensor = None,
+            attention_mask: Optional[torch.Tensor] = None,
+            position_ids: Optional[torch.LongTensor] = None,
+            past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
+            inputs_embeds: Optional[torch.FloatTensor] = None,
+            use_cache: Optional[bool] = None,
+            output_attentions: Optional[bool] = None,
+            output_hidden_states: Optional[bool] = None,
+            return_dict: Optional[bool] = None,
+            cache_position: Optional[torch.LongTensor] = None,
+        ) -> Union[Tuple, BaseModelOutputWithPast]:
+            output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+            output_hidden_states = (
+                output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            )
+            use_cache = use_cache if use_cache is not None else self.config.use_cache
+            return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-            for i in range(self.start_layer, self.end_layer):
-                layer = self.layers[i]
-                hidden_states, residual = layer(
-                    positions,
-                    hidden_states,
-                    kv_caches[i - self.start_layer],
-                    attn_metadata,
-                    residual,
+            if (input_ids is None) ^ (inputs_embeds is not None):
+                raise ValueError(
+                    "You cannot specify both input_ids and inputs_embeds at the same time, and must specify either one"
                 )
 
-            if not get_pp_group().is_last_rank:
-                return IntermediateTensors({
-                    "hidden_states": hidden_states,
-                    "residual": residual
-                })
+            if self.gradient_checkpointing and self.training and use_cache:
+                print(
+                    "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`."
+                )
+                use_cache = False
 
-            hidden_states, _ = self.norm(hidden_states, residual)
-            return hidden_states
+            if inputs_embeds is None:
+                inputs_embeds = self.embed_tokens(input_ids)
+
+            return_legacy_cache = False
+            if (
+                use_cache and not isinstance(past_key_values, Cache) and not self.training
+            ):  # kept for BC (non `Cache` `past_key_values` inputs)
+                return_legacy_cache = True
+                past_key_values = DynamicCache.from_legacy_cache(past_key_values)
+                print(
+                    "We detected that you are passing `past_key_values` as a tuple and this is deprecated and will be removed in v4.43. "
+                    "Please use an appropriate `Cache` class (https://huggingface.co/docs/transformers/v4.41.3/en/internal/generation_utils#transformers.Cache)"
+                )
+
+            if cache_position is None:
+                past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+                cache_position = torch.arange(
+                    past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+                )
+            if position_ids is None:
+                position_ids = cache_position.unsqueeze(0)
+
+            causal_mask = self._update_causal_mask(
+                attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
+            )
+            hidden_states = inputs_embeds
+
+            # create position embeddings to be shared across the decoder layers
+            position_embeddings = self.rotary_emb(hidden_states, position_ids)
+
+            # decoder layers
+            all_hidden_states = () if output_hidden_states else None
+            all_self_attns = () if output_attentions else None
+            next_decoder_cache = None
+
+            #import pdb; pdb.set_trace()
+            nLayer = 0
+            for decoder_layer in self.layers:
+                if output_hidden_states:
+                    all_hidden_states += (hidden_states,)
+
+                if self.gradient_checkpointing and self.training:
+                    layer_outputs = self._gradient_checkpointing_func(
+                        decoder_layer.__call__,
+                        hidden_states,
+                        causal_mask,
+                        position_ids,
+                        past_key_values,
+                        output_attentions,
+                        use_cache,
+                        cache_position,
+                        position_embeddings,
+                    )
+                else:
+                    layer_outputs = decoder_layer(
+                        hidden_states,
+                        attention_mask=causal_mask,
+                        position_ids=position_ids,
+                        past_key_value=past_key_values,
+                        output_attentions=output_attentions,
+                        use_cache=use_cache,
+                        cache_position=cache_position,
+                        position_embeddings=position_embeddings,
+                    )
+
+                hidden_states_next = layer_outputs[0]
+                cos_sim = F.cosine_similarity(hidden_states, hidden_states_next, dim=-1)
+                hidden_states = hidden_states_next
+
+                if use_cache:
+                    next_decoder_cache = layer_outputs[2 if output_attentions else 1]
+
+                if output_attentions:
+                    all_self_attns += (layer_outputs[1],)
+
+                # import pdb; pdb.set_trace()
+                if nLayer >= 24 and cos_sim[:,-1] > 0.975:
+                    print (f'@@@ Start to trucate at {position_ids[-1]} position of {nLayer} layer @@@\n')
+                    break
+                nLayer = nLayer + 1
+
+            hidden_states = self.norm(hidden_states)
+
+            # add hidden states from the last decoder layer
+            if output_hidden_states:
+                all_hidden_states += (hidden_states,)
+
+            next_cache = next_decoder_cache if use_cache else None
+            if return_legacy_cache:
+                next_cache = next_cache.to_legacy_cache()
+
+            if not return_dict:
+                return tuple(v for v in [hidden_states, next_cache, all_hidden_states, all_self_attns] if v is not None)
+            return BaseModelOutputWithPast(
+                last_hidden_state=hidden_states,
+                past_key_values=next_cache,
+                hidden_states=all_hidden_states,
+                attentions=all_self_attns,
+            )
+
         return model_forward
 
     def CLM_factory():
@@ -233,8 +335,8 @@ def hf_adapt(model):
     #import pdb; pdb.set_trace()
     # embobj = model.model.embed_tokens
     # embobj.forward = MethodType(Emb_factory(), embobj)
-    attnobj = model.model.layers[0].self_attn
-    attnobj.forward = MethodType(Attn_factory(), attnobj)
+    # attnobj = model.model.layers[0].self_attn
+    # attnobj.forward = MethodType(Attn_factory(), attnobj)
     modelobj = model.model
     modelobj.forward = MethodType(Model_factory(), modelobj)
     # clmobj = model
@@ -242,8 +344,8 @@ def hf_adapt(model):
     # model._run_engine = MethodType(Engine_factory(), model)
 
 
-    for i, layer_mask in enumerate(activation_mask):
-        obj = model.model.layers[i].mlp
-        obj.forward = MethodType(Mlp_factory(i, layer_mask.to('cuda')), obj)
+    # for i, layer_mask in enumerate(activation_mask):
+    #     obj = model.model.layers[i].mlp
+    #     obj.forward = MethodType(Mlp_factory(i, layer_mask.to('cuda')), obj)
     
     return model, sum1, sum2, sum3, over_zero, flat_zero

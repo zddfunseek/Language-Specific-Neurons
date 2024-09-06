@@ -30,8 +30,8 @@ stop_token_id = tokenizer.convert_tokens_to_ids(["</s>", "<|eot_id|>", "<|end_of
 stopping_criteria = StoppingCriteriaList([StopTokenCriteria(stop_token_id)])
 
 ### Todo: complete hf_adapt 
-# import pdb; pdb.set_trace()
-# (model, sum1, sum2, sum3, over_zero, flat_zero) = hf_adapt(model)
+#import pdb; pdb.set_trace()
+(model, sum1, sum2, sum3, over_zero, flat_zero) = hf_adapt(model)
 
 # Generate text
 outputs = model.generate(inputs["input_ids"], attention_mask=attention_mask, max_length=2048, num_return_sequences=1, 

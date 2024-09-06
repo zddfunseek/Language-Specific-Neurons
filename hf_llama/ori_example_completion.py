@@ -58,7 +58,7 @@ def main(
         "<|start_header_id|>user<|end_header_id|>\n\nKylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?<|eot_id|><|start_header_id|>assistant<|end_header_id|>"]
 
     prompts = ["<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|>"
-        "<|start_header_id|>user<|end_header_id|>\n\nBrian's friend Bobby has 5 fewer than 3 times as many video games as Brian does.  If Brian has 20 video games but lost 5 right before the comparison was made, how many does Bobby have?<|eot_id|><|start_header_id|>assistant<|end_header_id|>"]
+        "<|start_header_id|>user<|end_header_id|>\n\nQuestion: Carla is downloading a 200 GB file. Normally she can download 2 GB/minute, but 40% of the way through the download, Windows forces a restart to install updates, which takes 20 minutes. Then Carla has to restart the download from the beginning. How load does it take to download the file?<|eot_id|><|start_header_id|>assistant<|end_header_id|>"]
 
     results = generator.text_completion(
         prompts,
