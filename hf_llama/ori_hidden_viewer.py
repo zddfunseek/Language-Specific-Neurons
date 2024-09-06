@@ -40,28 +40,37 @@ def plot_heatmap(hiddenstates, model_id, plot_figs_per_head, save_fig_path, toke
         hiddenstates = [hiddenstates[i][:, :, 1: , 1: ] for i in range(len(hiddenstates))]
         tokens_list = tokens_list[1: ]
 
-    # a figure for all
-    print(f'plotting a figure for either the specified or all layers by default ...')
-    num_cols = 1
-    num_rows = 1
-    fig, axes = plt.subplots(1, 1, figsize=(len(tokens_list), len(hiddenstates)))
-    axes = np.reshape(axes,(num_rows,num_cols))
+    # 调用函数计算相邻序列的相似度
+    #import pdb; pdb.set_trace()
+    hiddenstates = torch.stack(hiddenstates)
+    similarity = compute_cosine_similarity(hiddenstates)
+
     # 创建自定义颜色映射
     # mycolors = ['darkblue', 'blue', 'lightblue', 'white']  # 从深到浅的颜色
     # mycolors = ['#ffffff', '#e6f2ff', '#cce5ff', '#99ccff', '#66b3ff', '#3399ff', '#007acc', '#0059b3', '#003d80', '#002966']
     mycolors = ['#f2f9ff', '#cce5ff', '#66b3ff', '#3399ff', '#1f8cff', '#007acc', '#0059b3', '#003d80', '#002966', '#001a66', '#001233', '#000f1a', '#000b0b']
     mycolors = ['#ffffff', '#f2f9ff', '#cce5ff', '#66b3ff', '#3399ff', '#1f8cff', '#007acc', '#0059b3', '#003d80', '#002966']
+    mycolors = ['#ffffff', '#f2f9ff',            '#66b3ff',          '#1f8cff',               '#0059b3',            '#002966']
     mycmap = mcolors.LinearSegmentedColormap.from_list('custom_cmap', mycolors)
 
-    # 调用函数计算相邻序列的相似度
-    import pdb; pdb.set_trace()
-    hiddenstates = torch.stack(hiddenstates)
-    similarity = compute_cosine_similarity(hiddenstates)
-    sns.heatmap(similarity.squeeze(1).numpy(), cmap=mycmap, square=True, xticklabels=tokens_list, yticklabels=[i for i in range(len(hiddenstates) - 1)], ax=axes[0, 0])
-    #axes[0, 0].tick_params(axis='both', labelsize=32) 
+    # a figure for all
+    print(f'plotting a figure for either the specified or all layers by default ...')
+    num_cols = 1
+    num_rows = 1
+    is_vertical_style = True
+    tokens_list = [f'{x}_{i}' for i, x in enumerate(tokens_list)]
+    if is_vertical_style:
+        fig, axes = plt.subplots(1, 1, figsize=(len(hiddenstates), len(tokens_list)))
+        axes = np.reshape(axes,(num_rows,num_cols))
+        sns.heatmap(similarity.squeeze(1).transpose(0,1).numpy(), cmap=mycmap, square=True, yticklabels=tokens_list, xticklabels=[i for i in range(len(hiddenstates) - 1)], ax=axes[0, 0])
+    else:
+        fig, axes = plt.subplots(1, 1, figsize=(len(tokens_list), len(hiddenstates)))
+        axes = np.reshape(axes,(num_rows,num_cols))
+        sns.heatmap(similarity.squeeze(1).numpy(), cmap=mycmap, square=True, xticklabels=tokens_list, yticklabels=[i for i in range(len(hiddenstates) - 1)], ax=axes[0, 0])
+    axes[0, 0].tick_params(axis='both', labelsize=24) 
 
     plt.suptitle(f'hiddenstate_similarity') 
-    plt.savefig(os.path.join(save_fig_path_model, f'hiddenstate_.jpg'))
+    plt.savefig(os.path.join(save_fig_path_model, f'hiddenstate_vertical_1.jpg'))
     plt.close()   
 
 # a wrapper
@@ -92,7 +101,7 @@ def view_attention(
         inputs = tokenizer(prompt, return_tensors="pt")['input_ids'].to(model.device)
         tokens_list = list(map(lambda x:x.replace('▁',''), tokenizer.convert_ids_to_tokens(inputs[0].cpu())))   # used as labels when plotting
         print("* Generating ...")
-        import pdb; pdb.set_trace()
+        #import pdb; pdb.set_trace()
         with torch.no_grad():
             ### a list containing 33 layers' hidden states, each layer is a tensor with shape [1, seq_len, hidden_dim]
             ### NOTE:  the first layer is embedding, while the last layer is the normalization of hidden states

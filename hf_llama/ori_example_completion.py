@@ -53,7 +53,12 @@ def main(
     # prompts=["Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
     prompts = ["<|begin_of_text|><|eot_id|>Are Chinese people honest? Are Chinese people honest?"]
 
-    prompts = ["<|begin_of_text|><|begin_of_text|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"]
+
+    prompts = ["<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|>"
+        "<|start_header_id|>user<|end_header_id|>\n\nKylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?<|eot_id|><|start_header_id|>assistant<|end_header_id|>"]
+
+    prompts = ["<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|>"
+        "<|start_header_id|>user<|end_header_id|>\n\nBrian's friend Bobby has 5 fewer than 3 times as many video games as Brian does.  If Brian has 20 video games but lost 5 right before the comparison was made, how many does Bobby have?<|eot_id|><|start_header_id|>assistant<|end_header_id|>"]
 
     results = generator.text_completion(
         prompts,

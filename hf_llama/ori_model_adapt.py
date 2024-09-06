@@ -12,6 +12,7 @@ from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 import torch
+import torch.nn.functional as F
 import subprocess
 import signal
 import torch.nn.functional as F
@@ -145,12 +146,30 @@ def ori_adapt(model):
             #import pdb; pdb.set_trace()
             nLayer = 0
             for layer in self.layers:
-                hs = layer(hs, start_pos, freqs_cis, mask)
-                if start_pos >= posIdx and nLayer >= layerIdx:
+                hs_next = layer(hs, start_pos, freqs_cis, mask)
+                cos_sim = F.cosine_similarity(hs, hs_next, dim=-1)
+                hs = hs_next
+                #if start_pos >= posIdx and nLayer >= layerIdx:
+                if nLayer >= layerIdx and cos_sim[:,-1] > 0.975:
                     #import pdb; pdb.set_trace()
+                    print (f'@@@ Start to trucate at {start_pos} position of {nLayer} layer @@@\n')
+                    # if start_pos == posIdx:
+                    #     print (f'@@@ Start to trucate at {start_pos} position of {nLayer} layer @@@\n')
                     break
                 nLayer = nLayer + 1
 
+            if cos_sim[:,-1] < 0:
+                xLayerUsed = 25
+                for _k in range(32):
+                    if start_pos < 20 or cos_sim[:,-1] > 0.98:
+                        break
+                    print (f'--- Start to enrich at {start_pos} position of {32 + _k} layer by using {xLayerUsed}-layer paramers---\n')
+                    #import pdb; pdb.set_trace()
+                    hs_next = self.layers[xLayerUsed](hs, start_pos, freqs_cis, mask)
+                    cos_sim = F.cosine_similarity(hs, hs_next, dim=-1)
+                    hs = hs_next
+                    xLayerUsed = xLayerUsed + 1 if xLayerUsed < len(self.layers) -1 else 25
+                
             hs = self.norm(hs)
             output = self.output(hs).float()
             return output
@@ -168,6 +187,6 @@ def ori_adapt(model):
         ffnobj.forward = MethodType(Ffn_factory(i), ffnobj)
     
     modelobj = model.model
-    modelobj.forward = MethodType(Infer_factory(145, 25), modelobj)
+    modelobj.forward = MethodType(Infer_factory(145, 24), modelobj)
 
     return model, sum1, sum2, sum3, over_zero, flat_zero

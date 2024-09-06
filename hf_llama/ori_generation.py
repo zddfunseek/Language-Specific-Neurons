@@ -222,8 +222,9 @@ class Llama:
             #     probs = probs[:eos_idx] if logprobs else None
             ### zdd: adapting checking stop by a set of stop tokens instead of a single token
             eos_idx = None
+            eos_start = len(prompt_tokens[i]) if echo else 0
             for _k, _tok in enumerate(toks):
-                if _tok in self.tokenizer.stop_tokens:
+                if _k > eos_start and _tok in self.tokenizer.stop_tokens:
                     eos_idx = _k
                     break
             if eos_idx is not None:
