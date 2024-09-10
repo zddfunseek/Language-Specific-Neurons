@@ -145,16 +145,18 @@ def ori_adapt(model):
 
             #import pdb; pdb.set_trace()
             nLayer = 0
+            nSim = 0
             for layer in self.layers:
                 hs_next = layer(hs, start_pos, freqs_cis, mask)
                 cos_sim = F.cosine_similarity(hs, hs_next, dim=-1)
                 hs = hs_next
-                #if start_pos >= posIdx and nLayer >= layerIdx:
-                if nLayer >= layerIdx and cos_sim[:,-1] > 0.975:
-                    #import pdb; pdb.set_trace()
+                # import pdb; pdb.set_trace()
+                if cos_sim[:,-1] > 0.975:
+                    nSim = nSim + 1
+                else:
+                    nSim = 0
+                if nLayer >= 16 and nSim >= 3:
                     print (f'@@@ Start to trucate at {start_pos} position of {nLayer} layer @@@\n')
-                    # if start_pos == posIdx:
-                    #     print (f'@@@ Start to trucate at {start_pos} position of {nLayer} layer @@@\n')
                     break
                 nLayer = nLayer + 1
 

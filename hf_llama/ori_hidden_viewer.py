@@ -30,7 +30,7 @@ def compute_cosine_similarity(hiddenstates):
 
 def plot_heatmap(hiddenstates, model_id, plot_figs_per_head, save_fig_path, tokens_list=None, ignore_first_token=False, num_figs_per_row=4, layer_focus=None):
     """
-    hiddenstates: a list containing 32 layers' attention scores, each is a tensor with shape [1, num_heads, seq_len, seq_len]
+    hiddenstates: a list containing 32 layers' attention scores, each is a tensor with shape [1, num_heads, seq_len, hidden_dim]
     tokens_list: act as xticks and yticks of the figure, eg. ['<s>', 'Hi', ',', 'how', 'are', 'you', '?']
     """
     save_fig_path_model = os.path.join(save_fig_path, model_id) # the model's results are saved under this dir 
@@ -44,6 +44,10 @@ def plot_heatmap(hiddenstates, model_id, plot_figs_per_head, save_fig_path, toke
     #import pdb; pdb.set_trace()
     hiddenstates = torch.stack(hiddenstates)
     similarity = compute_cosine_similarity(hiddenstates)
+    with open(os.path.join(save_fig_path_model, f'hiddenstate_show.txt'), 'w') as f:
+        for _i, x in enumerate(tokens_list):
+            f.write(f'\n{_i}-->{x}:\n\t')
+            [f.write(f'{y.item():.2f} ') for y in similarity[...,_i]]
 
     # 创建自定义颜色映射
     # mycolors = ['darkblue', 'blue', 'lightblue', 'white']  # 从深到浅的颜色
@@ -53,28 +57,35 @@ def plot_heatmap(hiddenstates, model_id, plot_figs_per_head, save_fig_path, toke
     mycolors = ['#ffffff', '#f2f9ff',            '#66b3ff',          '#1f8cff',               '#0059b3',            '#002966']
     mycmap = mcolors.LinearSegmentedColormap.from_list('custom_cmap', mycolors)
 
-    # a figure for all
-    print(f'plotting a figure for either the specified or all layers by default ...')
-    num_cols = 1
-    num_rows = 1
-    is_vertical_style = True
-    tokens_list = [f'{x}_{i}' for i, x in enumerate(tokens_list)]
-    if is_vertical_style:
-        fig, axes = plt.subplots(1, 1, figsize=(len(hiddenstates), len(tokens_list)))
-        axes = np.reshape(axes,(num_rows,num_cols))
-        sns.heatmap(similarity.squeeze(1).transpose(0,1).numpy(), cmap=mycmap, square=True, yticklabels=tokens_list, xticklabels=[i for i in range(len(hiddenstates) - 1)], ax=axes[0, 0])
-    else:
-        fig, axes = plt.subplots(1, 1, figsize=(len(tokens_list), len(hiddenstates)))
-        axes = np.reshape(axes,(num_rows,num_cols))
-        sns.heatmap(similarity.squeeze(1).numpy(), cmap=mycmap, square=True, xticklabels=tokens_list, yticklabels=[i for i in range(len(hiddenstates) - 1)], ax=axes[0, 0])
-    axes[0, 0].tick_params(axis='both', labelsize=24) 
+    plotBlockSize = 100
+    plotBlockNum = math.ceil(similarity.size(-1) / plotBlockSize)
+    for _bi in range(plotBlockNum):
+        blockStart = _bi * plotBlockSize
+        blockEnd =  (_bi + 1) * plotBlockSize if _bi < plotBlockNum - 1 else len(tokens_list)
 
-    plt.suptitle(f'hiddenstate_similarity') 
-    plt.savefig(os.path.join(save_fig_path_model, f'hiddenstate_vertical_1.jpg'))
-    plt.close()   
+        # a figure for all
+        print(f'plotting a figure for either the specified or all layers within ranges of {blockStart}-{blockEnd} tokens ...')
+        num_cols = 1
+        num_rows = 1
+        is_vertical_style = True
+        block_tokens_list = [f'{x}_{i}' for i, x in enumerate(tokens_list[blockStart:blockEnd])]
+        if is_vertical_style:
+            fig, axes = plt.subplots(1, 1, figsize=(len(hiddenstates), len(block_tokens_list))) ### (numLayers, numTokens)
+            axes = np.reshape(axes,(num_rows,num_cols))
+            sns.heatmap(similarity.squeeze(1).transpose(0,1)[blockStart:blockEnd,...].numpy(), fmt=".2f", cmap=mycmap, square=True, yticklabels=block_tokens_list, xticklabels=[i for i in range(len(hiddenstates) - 1)], ax=axes[0, 0])
+        else:
+            fig, axes = plt.subplots(1, 1, figsize=(len(block_tokens_list), len(hiddenstates)))
+            axes = np.reshape(axes,(num_rows,num_cols))
+            sns.heatmap(similarity.squeeze(1)[blockStart:blockEnd,...].numpy(), cmap=mycmap, square=True, xticklabels=block_tokens_list, yticklabels=[i for i in range(len(hiddenstates) - 1)], ax=axes[0, 0])
+        axes[0, 0].tick_params(axis='both', labelsize=32)
+        axes[0, 0].set_title(f'Block {blockStart}-{blockEnd}', fontsize=45) 
+
+        plt.suptitle(f'hiddenstate_similarity') 
+        plt.savefig(os.path.join(save_fig_path_model, f'hiddenstate_{"ver" if is_vertical_style else "hor"}_{blockStart}-{blockEnd}.jpg'))
+        plt.close() 
 
 # a wrapper
-def view_attention(
+def view_hidden(
     model=None,  # the model object
     model_id=None,
     tokenizer=None,
@@ -158,7 +169,7 @@ if __name__ == "__main__":
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
 
     # visualize attention
-    view_attention(
+    view_hidden(
         model=model,  # the model object
         model_id=os.path.basename(args.model_path) if args.model_id is None else args.model_id,
         tokenizer=tokenizer,

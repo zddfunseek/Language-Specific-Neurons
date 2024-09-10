@@ -109,7 +109,8 @@ def Emb_factory(noise_scale=1e-1):
     return Embed_forward
 
 def hf_adapt(model):
-    max_length = model.config.rope_scaling['original_max_position_embeddings']
+    #max_length = model.config.rope_scaling['original_max_position_embeddings']
+    #max_length = model.config.max_position_embeddings
     num_layers = model.config.num_hidden_layers
     intermediate_size = model.config.intermediate_size
 
@@ -230,8 +231,15 @@ def hf_adapt(model):
             next_decoder_cache = None
 
             #import pdb; pdb.set_trace()
-            nLayer = 0
-            for decoder_layer in self.layers:
+            idxLayer = 0
+            nHighSimContinuousLayers = 0
+            nWarmupTok = 90
+            nOutLayer = 2
+            nBarLayer = 24
+            valBarSim = 0.96 #0.975
+            for _i in range(len(self.layers) - nOutLayer):
+            #for decoder_layer in self.layers:
+                decoder_layer = self.layers[_i]
                 if output_hidden_states:
                     all_hidden_states += (hidden_states,)
 
@@ -259,21 +267,41 @@ def hf_adapt(model):
                         position_embeddings=position_embeddings,
                     )
 
-                hidden_states_next = layer_outputs[0]
-                cos_sim = F.cosine_similarity(hidden_states, hidden_states_next, dim=-1)
-                hidden_states = hidden_states_next
-
                 if use_cache:
                     next_decoder_cache = layer_outputs[2 if output_attentions else 1]
 
                 if output_attentions:
                     all_self_attns += (layer_outputs[1],)
 
-                # import pdb; pdb.set_trace()
-                if nLayer >= 24 and cos_sim[:,-1] > 0.975:
-                    print (f'@@@ Start to trucate at {position_ids[-1]} position of {nLayer} layer @@@\n')
+                #import pdb; pdb.set_trace()
+                hidden_states_next = layer_outputs[0]
+                cos_sim = F.cosine_similarity(hidden_states, hidden_states_next, dim=-1)
+                hidden_states = hidden_states_next
+                if cos_sim[:,-1] > valBarSim:
+                    nHighSimContinuousLayers = nHighSimContinuousLayers + 1
+                else:
+                    nHighSimContinuousLayers = 0
+                
+                if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
+                #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3 and position_ids[-1][-1] > nWarmupTok:
+                    print (f'@@@ Start to trucate at {position_ids[-1][-1]} position of {idxLayer} layer @@@\n')
                     break
-                nLayer = nLayer + 1
+                idxLayer = idxLayer + 1
+            
+            # process last specified output layers
+            for _i in range(len(self.layers) - nOutLayer, len(self.layers)):
+                layer_outputs = self.layers[_i](
+                        hidden_states,
+                        attention_mask=causal_mask,
+                        position_ids=position_ids,
+                        past_key_value=past_key_values,
+                        output_attentions=output_attentions,
+                        use_cache=use_cache,
+                        cache_position=cache_position,
+                        position_embeddings=position_embeddings,
+                    )
+                hidden_states = layer_outputs[0]
+
 
             hidden_states = self.norm(hidden_states)
 
