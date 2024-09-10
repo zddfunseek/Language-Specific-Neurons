@@ -289,8 +289,8 @@ def hf_adapt(model):
                 idxLayer = idxLayer + 1
             
             # process last specified output layers
-            for _i in range(len(self.layers) - nOutLayer, len(self.layers)):
-                layer_outputs = self.layers[_i](
+            for _lastIdx in range(len(self.layers) - nOutLayer, len(self.layers)):
+                layer_outputs = self.layers[_lastIdx](
                         hidden_states,
                         attention_mask=causal_mask,
                         position_ids=position_ids,
