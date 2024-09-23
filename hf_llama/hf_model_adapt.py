@@ -108,7 +108,7 @@ def Emb_factory(noise_scale=1e-1):
         return output
     return Embed_forward
 
-def hf_adapt(model):
+def hf_adapt(model, tokenizer):
     #max_length = model.config.rope_scaling['original_max_position_embeddings']
     #max_length = model.config.max_position_embeddings
     num_layers = model.config.num_hidden_layers
@@ -235,8 +235,9 @@ def hf_adapt(model):
             nHighSimContinuousLayers = 0
             nWarmupTok = 90
             nOutLayer = 2
-            nBarLayer = 24
-            valBarSim = 0.96 #0.975
+            nBarLayer = 16
+            valBarSim = 0.95 #0.96 #0.975
+            isActive = False
             for _i in range(len(self.layers) - nOutLayer):
             #for decoder_layer in self.layers:
                 decoder_layer = self.layers[_i]
@@ -282,12 +283,17 @@ def hf_adapt(model):
                 else:
                     nHighSimContinuousLayers = 0
                 
-                if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
+                #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
+                if nHighSimContinuousLayers >= 3:
                 #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3 and position_ids[-1][-1] > nWarmupTok:
-                    print (f'@@@ Start to trucate at {position_ids[-1][-1]} position of {idxLayer} layer @@@\n')
-                    break
+                    #import pdb; pdb.set_trace()
+                    print (f'@@@ Layer-truncation at #layer {idxLayer}/{num_layers}, #position {position_ids[-1][-1]}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
+                    isActive = True
+                    ### Only allow to layer-trucation on generation, instead of prompting stage
+                    if len(input_ids[-1]) < 2:
+                        break
                 idxLayer = idxLayer + 1
-            
+
             # process last specified output layers
             for _lastIdx in range(len(self.layers) - nOutLayer, len(self.layers)):
                 layer_outputs = self.layers[_lastIdx](
@@ -301,7 +307,7 @@ def hf_adapt(model):
                         position_embeddings=position_embeddings,
                     )
                 hidden_states = layer_outputs[0]
-
+                #print (f'+++ Perform on {position_ids[-1][-1]} position of {_lastIdx} layer +++\n')
 
             hidden_states = self.norm(hidden_states)
 
