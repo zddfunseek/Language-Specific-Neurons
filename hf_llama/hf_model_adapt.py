@@ -109,18 +109,23 @@ def Emb_factory(noise_scale=1e-1):
     return Embed_forward
 
 def hf_adapt(model, tokenizer):
+    #import pdb; pdb.set_trace()
     #max_length = model.config.rope_scaling['original_max_position_embeddings']
-    #max_length = model.config.max_position_embeddings
+    max_length = model.config.max_position_embeddings
+    max_length = 512
     num_layers = model.config.num_hidden_layers
     intermediate_size = model.config.intermediate_size
+    hidden_size = model.config.hidden_size
 
     sum1 = torch.zeros(num_layers, intermediate_size).to('cuda')
     sum2 = torch.zeros(num_layers, intermediate_size).to('cuda')
     sum3 = torch.zeros(num_layers, intermediate_size).to('cuda')
     sum4 = torch.zeros(num_layers, intermediate_size).to('cuda')
     over_zero = torch.zeros(num_layers, intermediate_size, dtype=torch.int32).to('cuda')
-    flat_zero = torch.zeros(num_layers, 2048, intermediate_size).to('cuda')
+    flat_zero = torch.zeros(num_layers, max_length, intermediate_size).to('cuda')
     activation_mask = torch.zeros(num_layers, intermediate_size, dtype=torch.int32).to('cuda')
+    layerwise_hiddenstates = torch.zeros(num_layers, max_length, hidden_size).to('cuda')
+    layerwise_avgsim = torch.zeros(num_layers, max_length, hidden_size).to('cuda')
 
     def Attn_factory():
         def Attn_forward(
@@ -282,7 +287,8 @@ def hf_adapt(model, tokenizer):
                     nHighSimContinuousLayers = nHighSimContinuousLayers + 1
                 else:
                     nHighSimContinuousLayers = 0
-                
+                layerwise_hiddenstates[idxLayer, position_ids[:]] = hidden_states_next[:]
+                layerwise_avgsim[:, idxLayer, position_ids[:]] = F.cosine_similarity(layerwise_hiddenstates[idxLayer, position_ids[:,:-1]].mean(dim=1), hidden_states_next, dim=-1)
                 #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
                 if nHighSimContinuousLayers >= 3:
                 #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3 and position_ids[-1][-1] > nWarmupTok:
