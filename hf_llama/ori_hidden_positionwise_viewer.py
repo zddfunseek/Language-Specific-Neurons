@@ -12,7 +12,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 # 计算最后一维的相邻向量之间的余弦相似度
 def compute_cosine_similarity(hiddenstates):
     # 滑动窗口大小 K
-    K = 20
+    K = 10
     # 累积平均计算
     cumulative_mean = torch.zeros_like(hiddenstates)
     # 按第 1 维（行）计算累积平均值
@@ -94,7 +94,7 @@ def plot_heatmap(hiddenstates, model_id, plot_figs_per_head, save_fig_path, toke
             fig, axes = plt.subplots(1, 1, figsize=(len(block_tokens_list), numLayer))
             axes = np.reshape(axes,(num_rows,num_cols))
             sns.heatmap(similarity.squeeze(1).transpose(0,1)[blockStart:blockEnd,...].numpy(), cmap=mycmap, square=True, xticklabels=block_tokens_list, yticklabels=[i for i in range(numLayer)], ax=axes[0, 0])
-        axes[0, 0].tick_params(axis='both', labelsize=16)
+        axes[0, 0].tick_params(axis='both', labelsize=32)
         axes[0, 0].set_title(f'Block {blockStart}-{blockEnd}', fontsize=45) 
 
         plt.suptitle(f'hiddenstate_similarity') 
