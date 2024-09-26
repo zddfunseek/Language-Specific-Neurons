@@ -72,13 +72,19 @@ def plot_heatmap(hiddenstates, model_id, plot_figs_per_head, save_fig_path, toke
         if is_vertical_style:
             fig, axes = plt.subplots(1, 1, figsize=(len(hiddenstates), len(block_tokens_list))) ### (numLayers, numTokens)
             axes = np.reshape(axes,(num_rows,num_cols))
-            sns.heatmap(similarity.squeeze(1).transpose(0,1)[blockStart:blockEnd,...].numpy(), fmt=".2f", cmap=mycmap, square=True, yticklabels=block_tokens_list, xticklabels=[i for i in range(len(hiddenstates) - 1)], ax=axes[0, 0])
+            myheatmap = sns.heatmap(similarity.squeeze(1).transpose(0,1)[blockStart:blockEnd,...].numpy(), fmt=".2f", cmap=mycmap, square=True, yticklabels=block_tokens_list, xticklabels=[i for i in range(len(hiddenstates) - 1)], ax=axes[0, 0])
         else:
             fig, axes = plt.subplots(1, 1, figsize=(len(block_tokens_list), len(hiddenstates)))
             axes = np.reshape(axes,(num_rows,num_cols))
-            sns.heatmap(similarity.squeeze(1)[blockStart:blockEnd,...].numpy(), cmap=mycmap, square=True, xticklabels=block_tokens_list, yticklabels=[i for i in range(len(hiddenstates) - 1)], ax=axes[0, 0])
+            myheatmap = sns.heatmap(similarity.squeeze(1)[blockStart:blockEnd,...].numpy(), cmap=mycmap, square=True, xticklabels=block_tokens_list, yticklabels=[i for i in range(len(hiddenstates) - 1)], ax=axes[0, 0])
         axes[0, 0].tick_params(axis='both', labelsize=32)
-        axes[0, 0].set_title(f'Block {blockStart}-{blockEnd}', fontsize=45) 
+        axes[0, 0].set_title(f'Block {blockStart}-{blockEnd}', fontsize=45)
+        colorbar = myheatmap.collections[0].colorbar
+        colorbar.ax.tick_params(labelsize=32)  # 设置 colorbar 刻度字体大小
+        colorbar.set_label('Colorbar Label', fontsize=32)  # 设置 colorbar 标签字体大小
+        ticks = np.linspace(0, 1, num=10)  # 创建 10 个刻度
+        colorbar.set_ticks(ticks)  # 设置 colorbar 刻度
+        colorbar.set_ticklabels([f'{tick:.2f}' for tick in ticks])  # 设置刻度标签格式  
 
         plt.suptitle(f'hiddenstate_similarity') 
         plt.savefig(os.path.join(save_fig_path_model, f'hiddenstate_{"ver" if is_vertical_style else "hor"}_{blockStart}-{blockEnd}.jpg'))

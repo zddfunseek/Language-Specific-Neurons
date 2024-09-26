@@ -8,11 +8,12 @@ import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import seaborn as sns
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
+from transformers import StoppingCriteria, StoppingCriteriaList
 
 # 计算最后一维的相邻向量之间的余弦相似度
 def compute_cosine_similarity(hiddenstates):
     # 滑动窗口大小 K
-    K = 10
+    K = 600
     # 累积平均计算
     cumulative_mean = torch.zeros_like(hiddenstates)
     # 按第 1 维（行）计算累积平均值
@@ -89,13 +90,19 @@ def plot_heatmap(hiddenstates, model_id, plot_figs_per_head, save_fig_path, toke
         if is_vertical_style:
             fig, axes = plt.subplots(1, 1, figsize=(numLayer, len(block_tokens_list))) ### (numLayers, numTokens)
             axes = np.reshape(axes,(num_rows,num_cols))
-            sns.heatmap(similarity.squeeze(1).transpose(0,1)[blockStart:blockEnd,...].numpy(), fmt=".2f", cmap=mycmap, square=True, yticklabels=block_tokens_list, xticklabels=[i for i in range(numLayer)], ax=axes[0, 0])
+            myheatmap = sns.heatmap(similarity.squeeze(1).transpose(0,1)[blockStart:blockEnd,...].numpy(), fmt=".2f", cmap=mycmap, square=True, yticklabels=block_tokens_list, xticklabels=[i for i in range(numLayer)], ax=axes[0, 0])
         else:
             fig, axes = plt.subplots(1, 1, figsize=(len(block_tokens_list), numLayer))
             axes = np.reshape(axes,(num_rows,num_cols))
-            sns.heatmap(similarity.squeeze(1).transpose(0,1)[blockStart:blockEnd,...].numpy(), cmap=mycmap, square=True, xticklabels=block_tokens_list, yticklabels=[i for i in range(numLayer)], ax=axes[0, 0])
+            myheatmap = sns.heatmap(similarity.squeeze(1).transpose(0,1)[blockStart:blockEnd,...].numpy(), cmap=mycmap, square=True, xticklabels=block_tokens_list, yticklabels=[i for i in range(numLayer)], ax=axes[0, 0])
         axes[0, 0].tick_params(axis='both', labelsize=32)
-        axes[0, 0].set_title(f'Block {blockStart}-{blockEnd}', fontsize=45) 
+        axes[0, 0].set_title(f'Block {blockStart}-{blockEnd}', fontsize=45)
+        colorbar = myheatmap.collections[0].colorbar
+        colorbar.ax.tick_params(labelsize=32)  # 设置 colorbar 刻度字体大小
+        colorbar.set_label('Colorbar Label', fontsize=32)  # 设置 colorbar 标签字体大小
+        ticks = np.linspace(0, 1, num=10)  # 创建 10 个刻度
+        colorbar.set_ticks(ticks)  # 设置 colorbar 刻度
+        colorbar.set_ticklabels([f'{tick:.2f}' for tick in ticks])  # 设置刻度标签格式 
 
         plt.suptitle(f'hiddenstate_similarity') 
         plt.savefig(os.path.join(save_fig_path_model, f'hiddenstate_{"ver" if is_vertical_style else "hor"}_{blockStart}-{blockEnd}.jpg'))
@@ -152,7 +159,56 @@ def view_hidden(
     print('Plotting heatmap for attention scores ...')
     plot_heatmap(hiddenstates, model_id, plot_figs_per_head, save_fig_path, tokens_list, ignore_first_token, num_figs_per_row, layer_focus)
 
+class StopTokenCriteria(StoppingCriteria):
+    def __init__(self, stop_token_id):
+        self.stop_token_id = stop_token_id
 
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor, **kwargs) -> bool:
+        # 检查最新生成的 token 是否是停止标记
+        return input_ids[0, -1] in self.stop_token_id
+
+def Get_LLM_Completion(model, tokenizer, input_text):
+    # Encode input text
+    input_text = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: If a bag of marbles costs $20 and the price increases by 20% of the original price every two months, how much would a bag of marbles cost after 36 months?<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+
+    #input_text = "Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?"
+
+    input_text = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: Eliza's rate per hour for the first 40 hours she works each week is $10. She also receives an overtime pay of 1.2 times her regular hourly rate. If Eliza worked for 45 hours this week, how much are her earnings for this week?<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+
+    input_text = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: Two trains leave San Rafael at the same time. They begin traveling westward, both traveling for 80 miles. The next day, they travel northwards, covering 150 miles. What's the distance covered by each train in the two days?<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+
+    input_text = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\n2+5=10, 3+6=18, 4+7=?<|eot_id|><|start_header_id|>assistant<|end_header_id|>"
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    inputs = tokenizer(input_text, return_tensors="pt").to(device)
+
+    # Create attention mask
+    attention_mask = inputs.attention_mask
+
+    # 定义停止条件
+    stop_token_id = tokenizer.convert_tokens_to_ids(["</s>", "<|eot_id|>", "<|end_of_text|>", "<|end_header_id|>", "<|start_header_id|>"])
+    stopping_criteria = StoppingCriteriaList([StopTokenCriteria(stop_token_id)])
+
+    ### Todo: complete hf_adapt 
+    #(model, sum1, sum2, sum3, over_zero, flat_zero) = hf_adapt(model, tokenizer)
+
+    # Generate text
+    generation_kwargs = {
+                            "do_sample":False,
+                            "temperature":0, 
+                            "top_p":1
+                        }
+    outputs = model.generate(inputs["input_ids"], attention_mask=attention_mask, max_length=512, num_return_sequences=1, 
+                            pad_token_id=tokenizer.eos_token_id, stopping_criteria=stopping_criteria, **generation_kwargs)
+
+    # Decode the generated text
+    input_length = inputs["input_ids"].shape[1]
+    generated_text = tokenizer.decode(outputs[0][input_length:], skip_special_tokens=False)
+
+    print(f'\nPrompt::: {input_text}\n')
+    print(f'Response >>> {generated_text}')
+
+    return f'{input_text} {generated_text}'
 
 # parse arguments
 parser = argparse.ArgumentParser()
@@ -184,6 +240,9 @@ if __name__ == "__main__":
 
     model = AutoModelForCausalLM.from_pretrained(args.model_path, config=config, **kwargs)
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
+    
+    promptAndResponse = Get_LLM_Completion(model, tokenizer, '')
+    args.prompt = promptAndResponse
 
     # visualize attention
     view_hidden(
