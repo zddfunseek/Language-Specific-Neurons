@@ -84,7 +84,8 @@ def plot_heatmap(hiddenstates, model_id, plot_figs_per_head, save_fig_path, toke
         colorbar.set_label('Colorbar Label', fontsize=32)  # 设置 colorbar 标签字体大小
         ticks = np.linspace(0, 1, num=11)  # 创建 10 个刻度
         colorbar.set_ticks(ticks)  # 设置 colorbar 刻度
-        colorbar.set_ticklabels([f'{tick:.2f}' for tick in ticks])  # 设置刻度标签格式  
+        colorbar.set_ticklabels([f'{tick:.2f}' for tick in ticks])  # 设置刻度标签格式
+        colorbar.ax.set_aspect(20)  # 设置 colorbar 的宽度  
 
         plt.suptitle(f'hiddenstate_similarity') 
         plt.savefig(os.path.join(save_fig_path_model, f'hiddenstate_{"ver" if is_vertical_style else "hor"}_{blockStart}-{blockEnd}.jpg'))
