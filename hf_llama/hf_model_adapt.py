@@ -1,5 +1,6 @@
 '''
 Adapted from: /home/dozhang/miniconda3/envs/py31/lib/python3.10/site-packages/transformers/models/llama/modeling_llama.py
+self_attention_type: LlamaSdpaAttention
 '''
 
 import argparse
@@ -15,39 +16,8 @@ import subprocess
 import signal
 import torch.nn.functional as F
 from types import MethodType
-from typing import ClassVar, List, Optional, Sequence, Union, cast, overload
-
-import vllm
-from vllm import LLM, SamplingParams
-from vllm.attention import AttentionMetadata
-from typing import Iterable, List, Optional, Tuple
-from vllm.distributed import (divide, get_tensor_model_parallel_rank,
-                              get_tensor_model_parallel_world_size,
-                              tensor_model_parallel_all_reduce)
-from vllm.model_executor.layers.vocab_parallel_embedding import get_masked_input_and_mask
-from vllm.outputs import EmbeddingRequestOutput, RequestOutput
-
-from vllm.attention import Attention, AttentionMetadata
-from vllm.config import CacheConfig, LoRAConfig
-from vllm.distributed import (get_pp_group, get_tensor_model_parallel_rank,
-                              get_tensor_model_parallel_world_size)
-from vllm.model_executor.layers.activation import SiluAndMul
-from vllm.model_executor.layers.layernorm import RMSNorm
-from vllm.model_executor.layers.linear import (MergedColumnParallelLinear,
-                                               QKVParallelLinear,
-                                               RowParallelLinear)
-from vllm.model_executor.layers.logits_processor import LogitsProcessor
-from vllm.model_executor.layers.quantization.base_config import (
-    QuantizationConfig)
-from vllm.model_executor.layers.rotary_embedding import get_rope
-from vllm.model_executor.layers.sampler import Sampler
-from vllm.model_executor.layers.vocab_parallel_embedding import (
-    DEFAULT_VOCAB_PADDING_SIZE, ParallelLMHead, VocabParallelEmbedding)
-from vllm.model_executor.model_loader.weight_utils import (
-    default_weight_loader, kv_cache_scales_loader)
-from vllm.model_executor.sampling_metadata import SamplingMetadata
-from vllm.sequence import IntermediateTensors, SamplerOutput
-from vllm.utils import is_hip, print_warning_once
+from typing import List, Optional, Sequence, Union
+from typing import List, Optional, Tuple
 
 from transformers.cache_utils import Cache, DynamicCache, StaticCache
 from transformers.modeling_outputs import (
@@ -57,56 +27,11 @@ from transformers.modeling_outputs import (
     SequenceClassifierOutputWithPast,
     TokenClassifierOutput,
 )
+from transformers.models.llama.modeling_llama import (
+    apply_rotary_pos_emb,
+    repeat_kv,
+)
 
-
-def Emb_factory(noise_scale=1e-1):
-    def Embed_forward(self, input_):
-        #import pdb; pdb.set_trace()
-        if self.tp_size > 1:
-            # Build the mask.
-            masked_input, input_mask = get_masked_input_and_mask(
-                input_, self.shard_indices.org_vocab_start_index,
-                self.shard_indices.org_vocab_end_index,
-                self.shard_indices.num_org_vocab_padding,
-                self.shard_indices.added_vocab_start_index,
-                self.shard_indices.added_vocab_end_index)
-        else:
-            masked_input = input_
-        # Get the embeddings.
-        output_parallel = F.embedding(masked_input.long(), self.weight)
-        # Mask the output embedding.
-        if self.tp_size > 1:
-            output_parallel.masked_fill_(input_mask.unsqueeze(-1), 0)
-        # Reduce across all the model parallel GPUs.
-        output = tensor_model_parallel_all_reduce(output_parallel)
-        if input_.size(0) > 1:
-            #import pdb; pdb.set_trace()
-            start=22
-            end=output.size(0) - 4
-
-            ### add random nosise
-            # noise = torch.from_numpy(np.random.normal(loc=0.0, scale=noise_scale, size=output[start:end,:].shape)).to(torch.bfloat16).to('cuda')
-            # #print('raw output:')
-            # # print(output[...,:20])
-            # # print('noise:')
-            # # print(noise[...,:20])
-            # output[start:end,:] = output[start:end,:] + noise
-
-            ### add reversily
-            # print('new output:')
-            # print(output[...,:20])
-            output[start:end,:] = torch.add(output[start:end,:], output[start:end,:].flip(dims=[0]))
-            output[start:end,:] = output[start:end,:].flip(dims=[0])
-
-            ### shuffle tokens
-            # indices = torch.randperm(end - start) + start
-            # print ('Random permutation of embeddings:\n\t')
-            # print (indices)
-            # shuffled_suboutput = output[indices, :]
-            # output[start:end,:] = shuffled_suboutput
-
-        return output
-    return Embed_forward
 
 def hf_adapt(model, tokenizer):
     #import pdb; pdb.set_trace()
@@ -128,45 +53,123 @@ def hf_adapt(model, tokenizer):
     layerwise_avgsim = torch.zeros(num_layers, max_length, hidden_size).to('cuda')
 
     def Attn_factory():
-        def Attn_forward(
+        def Sdpa_forward(
             self,
-            positions: torch.Tensor,
             hidden_states: torch.Tensor,
-            kv_cache: torch.Tensor,
-            attn_metadata: AttentionMetadata,
-        ) -> torch.Tensor:
-            global glob_posi
-            glob_posi = positions[0]
-            # if is_Debug and positions[0] == 23:
-            #     import pdb; pdb.set_trace()
-            #     global Flag
-            #     Flag = True
-            qkv, _ = self.qkv_proj(hidden_states)
-            q, k, v = qkv.split([self.q_size, self.kv_size, self.kv_size], dim=-1)
-            q, k = self.rotary_emb(positions, q, k)
-            attn_output = self.attn(q, k, v, kv_cache, attn_metadata)
-            output, _ = self.o_proj(attn_output)
-            return output
-        return Attn_forward
+            attention_mask: Optional[torch.Tensor] = None,
+            position_ids: Optional[torch.LongTensor] = None,
+            past_key_value: Optional[Cache] = None,
+            output_attentions: bool = False,
+            use_cache: bool = False,
+            cache_position: Optional[torch.LongTensor] = None,
+            position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.45
+            **kwargs,
+        ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+            #import pdb; pdb.set_trace()
+            if output_attentions:
+                # TODO: Improve this warning with e.g. `model.config.attn_implementation = "manual"` once this is implemented.
+                logger.warning_once(
+                    "LlamaModel is using LlamaSdpaAttention, but `torch.nn.functional.scaled_dot_product_attention` does not support `output_attentions=True`. Falling back to the manual attention implementation, "
+                    'but specifying the manual implementation will be required from Transformers version v5.0.0 onwards. This warning can be removed using the argument `attn_implementation="eager"` when loading the model.'
+                )
+                return super().forward(
+                    hidden_states=hidden_states,
+                    attention_mask=attention_mask,
+                    position_ids=position_ids,
+                    past_key_value=past_key_value,
+                    output_attentions=output_attentions,
+                    use_cache=use_cache,
+                    cache_position=cache_position,
+                    position_embeddings=position_embeddings,
+                )
+
+            bsz, q_len, _ = hidden_states.size()
+
+            query_states = self.q_proj(hidden_states)
+            key_states = self.k_proj(hidden_states)
+            value_states = self.v_proj(hidden_states)
+
+            query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
+            key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+            value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
+
+            if position_embeddings is None:
+                logger.warning_once(
+                    "The attention layers in this model are transitioning from computing the RoPE embeddings internally "
+                    "through `position_ids` (2D tensor with the indexes of the tokens), to using externally computed "
+                    "`position_embeddings` (Tuple of tensors, containing cos and sin). In v4.45 `position_ids` will be "
+                    "removed and `position_embeddings` will be mandatory."
+                )
+                cos, sin = self.rotary_emb(value_states, position_ids)
+            else:
+                cos, sin = position_embeddings
+            query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
+            if past_key_value is not None:
+                # sin and cos are specific to RoPE models; cache_position needed for the static cache
+                cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+                key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
+
+            key_states = repeat_kv(key_states, self.num_key_value_groups)
+            value_states = repeat_kv(value_states, self.num_key_value_groups)
+
+            causal_mask = attention_mask
+            if attention_mask is not None:
+                causal_mask = causal_mask[:, :, :, : key_states.shape[-2]]
+
+            # SDPA with memory-efficient backend is currently (torch==2.1.2) bugged with non-contiguous inputs with custom attn_mask,
+            # Reference: https://github.com/pytorch/pytorch/issues/112577.
+            if query_states.device.type == "cuda" and causal_mask is not None:
+                query_states = query_states.contiguous()
+                key_states = key_states.contiguous()
+                value_states = value_states.contiguous()
+
+            # We dispatch to SDPA's Flash Attention or Efficient kernels via this `is_causal` if statement instead of an inline conditional assignment
+            # in SDPA to support both torch.compile's dynamic shapes and full graph options. An inline conditional prevents dynamic shapes from compiling.
+            is_causal = True if causal_mask is None and q_len > 1 else False
+
+            attn_output = torch.nn.functional.scaled_dot_product_attention(
+                query_states,
+                key_states,
+                value_states,
+                attn_mask=causal_mask,
+                dropout_p=self.attention_dropout if self.training else 0.0,
+                is_causal=is_causal,
+            )
+
+            attn_output = attn_output.transpose(1, 2).contiguous()
+            attn_output = attn_output.view(bsz, q_len, -1)
+
+            attn_output = self.o_proj(attn_output)
+
+            return attn_output, None, past_key_value
+
+        return Sdpa_forward
 
     def Mlp_factory(idx, mask):
-        def llama_forward(self, x):
-            gate_up, _ = self.gate_up_proj(x)  # b * l, 2i
-            i = gate_up.size(-1)
-            activation = F.silu(gate_up[..., : i // 2])
-            #activation.index_fill_(-1, mask, 0)
-            # if is_Debug and Flag:
-            #     import pdb; pdb.set_trace()
-            #import pdb; pdb.set_trace()
-            sum1[idx, :] += activation.sum(dim=(0))
-            sum2[idx, :] += activation.pow(2).sum(dim=(0))
-            over_zero[idx, :] += (activation > 0).sum(dim=(0))
-            flat_zero[idx, glob_posi:glob_posi + activation.size(0), :] = activation > 0.2
-            x = activation * gate_up[..., i // 2 :]
-            x, _ = self.down_proj(x)
-            return x
+        def mlp_forward(self, x):
+            if self.config.pretraining_tp > 1:
+                slice = self.intermediate_size // self.config.pretraining_tp
+                gate_proj_slices = self.gate_proj.weight.split(slice, dim=0)
+                up_proj_slices = self.up_proj.weight.split(slice, dim=0)
+                down_proj_slices = self.down_proj.weight.split(slice, dim=1)
 
-        return llama_forward
+                gate_proj = torch.cat(
+                    [F.linear(x, gate_proj_slices[i]) for i in range(self.config.pretraining_tp)], dim=-1
+                )
+                up_proj = torch.cat([F.linear(x, up_proj_slices[i]) for i in range(self.config.pretraining_tp)], dim=-1)
+
+                intermediate_states = (self.act_fn(gate_proj) * up_proj).split(slice, dim=2)
+                down_proj = [
+                    F.linear(intermediate_states[i], down_proj_slices[i]) for i in range(self.config.pretraining_tp)
+                ]
+                down_proj = sum(down_proj)
+            else:
+                down_proj = self.down_proj(self.act_fn(self.gate_proj(x)) * self.up_proj(x))
+
+            return down_proj
+
+        return mlp_forward
 
     def Model_factory():
         def model_forward(
@@ -336,47 +339,12 @@ def hf_adapt(model, tokenizer):
 
         return model_forward
 
-    def CLM_factory():
-        def clm_forward(
-            self,
-            input_ids: torch.Tensor,
-            positions: torch.Tensor,
-            kv_caches: List[torch.Tensor],
-            attn_metadata: AttentionMetadata,
-            intermediate_tensors: Optional[IntermediateTensors] = None,
-        ) -> Union[torch.Tensor, IntermediateTensors]:
-            #import pdb; pdb.set_trace()
-            # indices = torch.randperm(input_ids.size(0))
-            # print ('Random permutation of input_ids:\n\t')
-            # print (indices)
-            # input_ids = input_ids[indices]
-            model_output = self.model(input_ids, positions, kv_caches,
-                                    attn_metadata, intermediate_tensors)
-            return model_output
-        return clm_forward
-
-    def Engine_factory():
-        def _run_engine(self, *, use_tqdm: bool) -> List[Union[RequestOutput, EmbeddingRequestOutput]]:
-            # Run the engine.
-            outputs: List[Union[RequestOutput, EmbeddingRequestOutput]] = []
-            total_in_toks = 0
-            total_out_toks = 0
-            while self.llm_engine.has_unfinished_requests():
-                step_outputs = self.llm_engine.step()
-                for output in step_outputs:
-                    if output.finished:
-                        outputs.append(output)
-            # Sort the outputs by request ID.
-            # This is necessary because some requests may be finished earlier than
-            # its previous requests.
-            return sorted(outputs, key=lambda x: int(x.request_id))
-        return _run_engine
 
     #import pdb; pdb.set_trace()
     # embobj = model.model.embed_tokens
     # embobj.forward = MethodType(Emb_factory(), embobj)
-    # attnobj = model.model.layers[0].self_attn
-    # attnobj.forward = MethodType(Attn_factory(), attnobj)
+    attnobj = model.model.layers[0].self_attn
+    attnobj.forward = MethodType(Attn_factory(), attnobj)
     modelobj = model.model
     modelobj.forward = MethodType(Model_factory(), modelobj)
     # clmobj = model

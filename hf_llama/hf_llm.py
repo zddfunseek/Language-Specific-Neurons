@@ -38,6 +38,7 @@ stopping_criteria = StoppingCriteriaList([StopTokenCriteria(stop_token_id)])
 ### Todo: complete hf_adapt 
 (model, sum1, sum2, sum3, over_zero, flat_zero) = hf_adapt(model, tokenizer)
 
+#import pdb; pdb.set_trace()
 # Generate text
 generation_kwargs = {
                         "do_sample":False,
