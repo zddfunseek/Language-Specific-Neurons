@@ -286,12 +286,13 @@ def hf_adapt(model, tokenizer):
                 hidden_states_next = layer_outputs[0]
                 cos_sim = F.cosine_similarity(hidden_states, hidden_states_next, dim=-1)
                 hidden_states = hidden_states_next
+                idxLayer = idxLayer + 1
                 if cos_sim[:,-1] > valBarSim:
                     nHighSimContinuousLayers = nHighSimContinuousLayers + 1
                 else:
                     nHighSimContinuousLayers = 0
-                layerwise_hiddenstates[idxLayer, position_ids[:]] = hidden_states_next[:]
-                layerwise_avgsim[:, idxLayer, position_ids[:]] = F.cosine_similarity(layerwise_hiddenstates[idxLayer, position_ids[:,:-1]].mean(dim=1), hidden_states_next, dim=-1)
+                # layerwise_hiddenstates[idxLayer, position_ids[:]] = hidden_states_next[:]
+                # layerwise_avgsim[:, idxLayer, position_ids[:]] = F.cosine_similarity(layerwise_hiddenstates[idxLayer, position_ids[:,:-1]].mean(dim=1), hidden_states_next, dim=-1)
                 #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
                 if nHighSimContinuousLayers >= 3:
                 #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3 and position_ids[-1][-1] > nWarmupTok:
@@ -300,8 +301,12 @@ def hf_adapt(model, tokenizer):
                     isActive = True
                     ### Only allow to layer-trucation on generation, instead of prompting stage
                     if len(input_ids[-1]) < 2:
-                        break
-                idxLayer = idxLayer + 1
+                        break               
+
+            # fullfill the empty attention cache for the skipped layers with the highest-low-layer keys and values
+            for _cacheIdx in range(idxLayer, len(self.layers) - nOutLayer):
+                past_key_values.update(past_key_values[_cacheIdx-1][0][:,:,-1:,:], past_key_values[_cacheIdx-1][1][:,:,-1:,:], _cacheIdx)
+                
 
             # process last specified output layers
             for _lastIdx in range(len(self.layers) - nOutLayer, len(self.layers)):
