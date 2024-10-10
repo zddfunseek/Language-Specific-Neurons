@@ -10,6 +10,7 @@ import numpy as np
 import logging
 from tqdm import tqdm
 import matplotlib.pyplot as plt
+import random
 
 import torch
 import subprocess
@@ -242,9 +243,9 @@ def hf_adapt(model, tokenizer):
             idxLayer = 0
             nHighSimContinuousLayers = 0
             nWarmupTok = 90
-            nOutLayer = 2
-            nBarLayer = 16
-            valBarSim = 0.95 #0.96 #0.975
+            nOutLayer = 3
+            nBarLayer = 24 #60(70B) 24(7B)
+            valBarSim = 0.975 #0.99 #0.96 #0.975(7B)
             isActive = False
             for _i in range(len(self.layers) - nOutLayer):
             #for decoder_layer in self.layers:
@@ -284,17 +285,21 @@ def hf_adapt(model, tokenizer):
 
                 #import pdb; pdb.set_trace()
                 hidden_states_next = layer_outputs[0]
-                cos_sim = F.cosine_similarity(hidden_states, hidden_states_next, dim=-1)
+                # Assuming hidden_states and hidden_states_next are outputs from different GPUs
+                hidden_states_gather = torch.nn.parallel.gather(hidden_states, target_device='cuda:0')
+                hidden_states_next_gather = torch.nn.parallel.gather(hidden_states_next, target_device='cuda:0')
+                # Compute cosine similarity
+                cos_sim = F.cosine_similarity(hidden_states_gather, hidden_states_next_gather, dim=-1)
                 hidden_states = hidden_states_next
                 idxLayer = idxLayer + 1
-                if cos_sim[:,-1] > valBarSim:
+                if cos_sim[-1] > valBarSim:
                     nHighSimContinuousLayers = nHighSimContinuousLayers + 1
                 else:
                     nHighSimContinuousLayers = 0
                 # layerwise_hiddenstates[idxLayer, position_ids[:]] = hidden_states_next[:]
                 # layerwise_avgsim[:, idxLayer, position_ids[:]] = F.cosine_similarity(layerwise_hiddenstates[idxLayer, position_ids[:,:-1]].mean(dim=1), hidden_states_next, dim=-1)
-                #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
-                if nHighSimContinuousLayers >= 3:
+                if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
+                #if nHighSimContinuousLayers >= 3:
                 #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3 and position_ids[-1][-1] > nWarmupTok:
                     #import pdb; pdb.set_trace()
                     print (f'@@@ Layer-truncation at #layer {idxLayer}/{num_layers}, #position {position_ids[-1][-1]}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
@@ -303,9 +308,11 @@ def hf_adapt(model, tokenizer):
                     if len(input_ids[-1]) < 2:
                         break               
 
-            # fullfill the empty attention cache for the skipped layers with the highest-low-layer keys and values
-            for _cacheIdx in range(idxLayer, len(self.layers) - nOutLayer):
-                past_key_values.update(past_key_values[_cacheIdx-1][0][:,:,-1:,:], past_key_values[_cacheIdx-1][1][:,:,-1:,:], _cacheIdx)
+            # # fullfill the empty attention cache for the skipped layers with the highest-low-layer keys and values
+            # for _cacheIdx in range(idxLayer, len(self.layers) - nOutLayer):
+            #     #rand_layeridx = random.randint(16, _cacheIdx)
+            #     #past_key_values.update(past_key_values[rand_layeridx][0][:,:,-1:,:], past_key_values[rand_layeridx][1][:,:,-1:,:], _cacheIdx)
+            #     past_key_values.update(past_key_values[_cacheIdx - 1][0][:,:,-1:,:], past_key_values[_cacheIdx - 1][1][:,:,-1:,:], _cacheIdx)
                 
 
             # process last specified output layers

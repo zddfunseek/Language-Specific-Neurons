@@ -9,6 +9,8 @@ import matplotlib.colors as mcolors
 import seaborn as sns
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 
+os.environ['CUDA_VISIBLE_DEVICES'] = '0,1,2,3'
+
 # 计算最后一维的相邻向量之间的余弦相似度
 def compute_cosine_similarity(hiddenstates):
     # 获取相邻的 layer 向量
@@ -172,7 +174,7 @@ if __name__ == "__main__":
     config._attn_implementation = "eager"    # use vanilla attention to return attention weights
     kwargs = {"torch_dtype": torch.float16, "device_map": "auto"}
 
-    model = AutoModelForCausalLM.from_pretrained(args.model_path, config=config, **kwargs)
+    model = AutoModelForCausalLM.from_pretrained(args.model_path, device_map="auto", config=config, **kwargs)
     tokenizer = AutoTokenizer.from_pretrained(args.model_path)
 
     # visualize attention
