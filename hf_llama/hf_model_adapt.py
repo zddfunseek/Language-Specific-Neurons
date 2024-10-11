@@ -34,7 +34,7 @@ from transformers.models.llama.modeling_llama import (
 )
 
 
-def hf_adapt(model, tokenizer):
+def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nCheckLayer = 3, nWarmupTok = 90):
     #import pdb; pdb.set_trace()
     #max_length = model.config.rope_scaling['original_max_position_embeddings']
     max_length = model.config.max_position_embeddings
@@ -242,10 +242,10 @@ def hf_adapt(model, tokenizer):
             #import pdb; pdb.set_trace()
             idxLayer = 0
             nHighSimContinuousLayers = 0
-            nWarmupTok = 90
-            nOutLayer = 3
-            nBarLayer = 24 #60(70B) 24(7B)
-            valBarSim = 0.975 #0.99 #0.96 #0.975(7B)
+            # nWarmupTok = 90
+            # nOutLayer = 3
+            # nBarLayer = 60 #(70B) #24 #24(7B)
+            # valBarSim = 0.99 #0.99 #0.96 #0.975(7B)
             isActive = False
             for _i in range(len(self.layers) - nOutLayer):
             #for decoder_layer in self.layers:
@@ -298,22 +298,34 @@ def hf_adapt(model, tokenizer):
                     nHighSimContinuousLayers = 0
                 # layerwise_hiddenstates[idxLayer, position_ids[:]] = hidden_states_next[:]
                 # layerwise_avgsim[:, idxLayer, position_ids[:]] = F.cosine_similarity(layerwise_hiddenstates[idxLayer, position_ids[:,:-1]].mean(dim=1), hidden_states_next, dim=-1)
-                if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
+                #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
                 #if nHighSimContinuousLayers >= 3:
-                #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3 and position_ids[-1][-1] > nWarmupTok:
+                if idxLayer >= nBarLayer and nHighSimContinuousLayers >= nCheckLayer and position_ids[-1][-1] > nWarmupTok:
                     #import pdb; pdb.set_trace()
-                    print (f'@@@ Layer-truncation at #layer {idxLayer}/{num_layers}, #position {position_ids[-1][-1]}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
-                    isActive = True
                     ### Only allow to layer-trucation on generation, instead of prompting stage
                     if len(input_ids[-1]) < 2:
+                        print (f'@@@ Layer-truncation at #layer {idxLayer}/{num_layers}, #position {position_ids[-1][-1]}, #SimScore {cos_sim[-1]}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
+                        isActive = True
                         break               
 
-            # # fullfill the empty attention cache for the skipped layers with the highest-low-layer keys and values
-            # for _cacheIdx in range(idxLayer, len(self.layers) - nOutLayer):
-            #     #rand_layeridx = random.randint(16, _cacheIdx)
-            #     #past_key_values.update(past_key_values[rand_layeridx][0][:,:,-1:,:], past_key_values[rand_layeridx][1][:,:,-1:,:], _cacheIdx)
-            #     past_key_values.update(past_key_values[_cacheIdx - 1][0][:,:,-1:,:], past_key_values[_cacheIdx - 1][1][:,:,-1:,:], _cacheIdx)
+            # fullfill the empty attention cache for the skipped layers with the highest-low-layer keys and values
+            for _cacheIdx in range(idxLayer, len(self.layers) - nOutLayer):
+                # Check if the key and value states are on the same device with previous key-value states, Move them to the same device if necessary
+                pre_key_states = past_key_values[_cacheIdx][0][:, :, -1:, :]
+                pre_value_states = past_key_values[_cacheIdx][1][:, :, -1:, :]
+                key_states = past_key_values[_cacheIdx - 1][0][:, :, -1:, :]
+                value_states = past_key_values[_cacheIdx - 1][1][:, :, -1:, :]
+                if key_states.device != pre_key_states.device:
+                    key_states = key_states.to(pre_key_states.device)
+                if value_states.device != pre_value_states.device:
+                    value_states = value_states.to(pre_value_states.device)
+                #rand_layeridx = random.randint(16, _cacheIdx)
+                #past_key_values.update(past_key_values[rand_layeridx][0][:,:,-1:,:], past_key_values[rand_layeridx][1][:,:,-1:,:], _cacheIdx)
+                #past_key_values.update(past_key_values[_cacheIdx - 1][0][:,:,-1:,:], past_key_values[_cacheIdx - 1][1][:,:,-1:,:], _cacheIdx)
+                past_key_values.update(key_states, value_states, _cacheIdx)
                 
+            if not isActive:
+                print (f'--- No truncation at #position {position_ids[-1][-1]}, #SimScore {cos_sim[-1]}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
 
             # process last specified output layers
             for _lastIdx in range(len(self.layers) - nOutLayer, len(self.layers)):
