@@ -319,9 +319,6 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
                     key_states = key_states.to(pre_key_states.device)
                 if value_states.device != pre_value_states.device:
                     value_states = value_states.to(pre_value_states.device)
-                #rand_layeridx = random.randint(16, _cacheIdx)
-                #past_key_values.update(past_key_values[rand_layeridx][0][:,:,-1:,:], past_key_values[rand_layeridx][1][:,:,-1:,:], _cacheIdx)
-                #past_key_values.update(past_key_values[_cacheIdx - 1][0][:,:,-1:,:], past_key_values[_cacheIdx - 1][1][:,:,-1:,:], _cacheIdx)
                 past_key_values.update(key_states, value_states, _cacheIdx)
                 
             if not isActive:

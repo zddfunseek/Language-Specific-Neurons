@@ -2,7 +2,6 @@ import os
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM, StoppingCriteria, StoppingCriteriaList
 from hf_model_adapt import hf_adapt
-import tensor_parallel as tp
 
 class StopTokenCriteria(StoppingCriteria):
     def __init__(self, stop_token_id):
