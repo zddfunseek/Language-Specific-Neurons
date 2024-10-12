@@ -309,7 +309,7 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
                 #import pdb; pdb.set_trace()
                 if nHighSimContinuousLayers >= nCheckLayer and len(input_ids[-1]) > 1 and globalBarLayer < 0:
                     #import pdb; pdb.set_trace()
-                    globalBarLayer = idxLayer
+                    globalBarLayer = max(idxLayer, nBarLayer)
                     print (f'\n*** Set BarLayer={globalBarLayer} based on prompt-layer similairty over {len(input_ids[-1])} tokens.\n')
                 # layerwise_hiddenstates[idxLayer, position_ids[:]] = hidden_states_next[:]
                 # layerwise_avgsim[:, idxLayer, position_ids[:]] = F.cosine_similarity(layerwise_hiddenstates[idxLayer, position_ids[:,:-1]].mean(dim=1), hidden_states_next, dim=-1)
