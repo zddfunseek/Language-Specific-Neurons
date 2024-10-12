@@ -33,8 +33,9 @@ from transformers.models.llama.modeling_llama import (
     repeat_kv,
 )
 
+globalBarLayer = -1
 
-def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nCheckLayer = 3, nWarmupTok = 90):
+def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nCheckLayer = 3, nWarmupTok = 90, globalBarLayer=-1):
     #import pdb; pdb.set_trace()
     #max_length = model.config.rope_scaling['original_max_position_embeddings']
     max_length = model.config.max_position_embeddings
@@ -172,7 +173,10 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
 
         return mlp_forward
 
+    globalNumDecodedLayer = torch.zeros(max_length).to('cuda')
+    globalNumSkippedLayer = torch.zeros(max_length).to('cuda')
     def Model_factory():
+        globalBarLayer = -1    
         def model_forward(
             self,
             input_ids: torch.LongTensor = None,
@@ -240,6 +244,9 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
             next_decoder_cache = None
 
             #import pdb; pdb.set_trace()
+            global globalBarLayer
+            numDecodedLayer = 0
+            numSkippedLayer = 0
             idxLayer = 0
             nHighSimContinuousLayers = 0
             # nWarmupTok = 90
@@ -290,21 +297,29 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
                 hidden_states_next_gather = torch.nn.parallel.gather(hidden_states_next, target_device='cuda:0')
                 # Compute cosine similarity
                 cos_sim = F.cosine_similarity(hidden_states_gather, hidden_states_next_gather, dim=-1)
+                cos_sim = torch.mean(cos_sim)
                 hidden_states = hidden_states_next
                 idxLayer = idxLayer + 1
-                if cos_sim[-1] > valBarSim:
+                numDecodedLayer = numDecodedLayer + 1
+                if cos_sim > valBarSim:
                     nHighSimContinuousLayers = nHighSimContinuousLayers + 1
                 else:
                     nHighSimContinuousLayers = 0
+                
+                #import pdb; pdb.set_trace()
+                if nHighSimContinuousLayers >= nCheckLayer and len(input_ids[-1]) > 1 and globalBarLayer < 0:
+                    #import pdb; pdb.set_trace()
+                    globalBarLayer = idxLayer
+                    print (f'\n*** Set BarLayer={globalBarLayer} based on prompt-layer similairty over {len(input_ids[-1])} tokens.\n')
                 # layerwise_hiddenstates[idxLayer, position_ids[:]] = hidden_states_next[:]
                 # layerwise_avgsim[:, idxLayer, position_ids[:]] = F.cosine_similarity(layerwise_hiddenstates[idxLayer, position_ids[:,:-1]].mean(dim=1), hidden_states_next, dim=-1)
                 #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
                 #if nHighSimContinuousLayers >= 3:
-                if idxLayer >= nBarLayer and nHighSimContinuousLayers >= nCheckLayer and position_ids[-1][-1] > nWarmupTok:
-                    #import pdb; pdb.set_trace()
-                    ### Only allow to layer-trucation on generation, instead of prompting stage
-                    if len(input_ids[-1]) < 2:
-                        print (f'@@@ Layer-truncation at #layer {idxLayer}/{num_layers}, #position {position_ids[-1][-1]}, #SimScore {cos_sim[-1]}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
+                ### Only allow to layer-trucation on generation, instead of prompting stage
+                if len(input_ids[-1]) < 2 and globalBarLayer > 0:
+                    if idxLayer >= globalBarLayer and nHighSimContinuousLayers >= nCheckLayer and position_ids[-1][-1] > nWarmupTok:
+                        #import pdb; pdb.set_trace()
+                        print (f'@@@ Layer-truncation at #layer {idxLayer}/{num_layers}, #position {position_ids[-1][-1]}, #SimScore {cos_sim}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
                         isActive = True
                         break               
 
@@ -320,9 +335,10 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
                 if value_states.device != pre_value_states.device:
                     value_states = value_states.to(pre_value_states.device)
                 past_key_values.update(key_states, value_states, _cacheIdx)
+                numSkippedLayer = numSkippedLayer + 1
                 
             if not isActive:
-                print (f'--- No truncation at #position {position_ids[-1][-1]}, #SimScore {cos_sim[-1]}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
+                print (f'--- No truncation at #position {position_ids[-1][-1]}, #SimScore {cos_sim}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
 
             # process last specified output layers
             for _lastIdx in range(len(self.layers) - nOutLayer, len(self.layers)):
@@ -338,6 +354,11 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
                     )
                 hidden_states = layer_outputs[0]
                 #print (f'+++ Perform on {position_ids[-1][-1]} position of {_lastIdx} layer +++\n')
+                numDecodedLayer = numDecodedLayer + 1
+
+            #import pdb; pdb.set_trace()
+            globalNumDecodedLayer[position_ids[-1][-1]] = numDecodedLayer
+            globalNumSkippedLayer[position_ids[-1][-1]] = numSkippedLayer
 
             hidden_states = self.norm(hidden_states)
 
@@ -377,4 +398,4 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
     #     obj = model.model.layers[i].mlp
     #     obj.forward = MethodType(Mlp_factory(i, layer_mask.to('cuda')), obj)
     
-    return model, sum1, sum2, sum3, over_zero, flat_zero
+    return model, globalNumDecodedLayer, globalNumSkippedLayer, sum3, over_zero, flat_zero
