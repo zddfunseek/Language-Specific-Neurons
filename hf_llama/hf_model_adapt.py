@@ -35,7 +35,7 @@ from transformers.models.llama.modeling_llama import (
 
 globalBarLayer = -1
 
-def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nCheckLayer = 3, nWarmupTok = 90, globalBarLayer=-1):
+def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nCheckLayer = 3, nWarmupTok = 90, globalBarLayer=-1, verbose=False):
     #import pdb; pdb.set_trace()
     #max_length = model.config.rope_scaling['original_max_position_embeddings']
     max_length = model.config.max_position_embeddings
@@ -310,7 +310,8 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
                 if nHighSimContinuousLayers >= nCheckLayer and len(input_ids[-1]) > 1 and globalBarLayer < 0:
                     #import pdb; pdb.set_trace()
                     globalBarLayer = max(idxLayer, nBarLayer)
-                    print (f'\n*** Set BarLayer={globalBarLayer} based on prompt-layer similairty over {len(input_ids[-1])} tokens.\n')
+                    if verbose:
+                        print (f'\n*** Set BarLayer={globalBarLayer} based on prompt-layer similairty over {len(input_ids[-1])} tokens.\n')
                 # layerwise_hiddenstates[idxLayer, position_ids[:]] = hidden_states_next[:]
                 # layerwise_avgsim[:, idxLayer, position_ids[:]] = F.cosine_similarity(layerwise_hiddenstates[idxLayer, position_ids[:,:-1]].mean(dim=1), hidden_states_next, dim=-1)
                 #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
@@ -319,7 +320,8 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
                 if len(input_ids[-1]) < 2 and globalBarLayer > 0:
                     if idxLayer >= globalBarLayer and nHighSimContinuousLayers >= nCheckLayer and position_ids[-1][-1] > nWarmupTok:
                         #import pdb; pdb.set_trace()
-                        print (f'@@@ Layer-truncation at #layer {idxLayer}/{num_layers}, #position {position_ids[-1][-1]}, #SimScore {cos_sim}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
+                        if verbose:
+                            print (f'@@@ Layer-truncation at #layer {idxLayer}/{num_layers}, #position {position_ids[-1][-1]}, #SimScore {cos_sim}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
                         isActive = True
                         break               
 
@@ -337,7 +339,7 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
                 past_key_values.update(key_states, value_states, _cacheIdx)
                 numSkippedLayer = numSkippedLayer + 1
                 
-            if not isActive:
+            if not isActive and verbose:
                 print (f'--- No truncation at #position {position_ids[-1][-1]}, #SimScore {cos_sim}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
 
             # process last specified output layers
@@ -398,4 +400,4 @@ def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nChe
     #     obj = model.model.layers[i].mlp
     #     obj.forward = MethodType(Mlp_factory(i, layer_mask.to('cuda')), obj)
     
-    return model, globalNumDecodedLayer, globalNumSkippedLayer, sum3, over_zero, flat_zero
+    return model, globalNumDecodedLayer, globalNumSkippedLayer
