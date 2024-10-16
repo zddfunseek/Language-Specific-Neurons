@@ -38,7 +38,7 @@ def GetQueryGeneration(input_text):
     attention_mask = inputs.attention_mask
 
     ### Todo: complete hf_adapt 
-    (model, globalNumDecodedLayer, globalNumSkippedLayer) = hf_adapt(model, tokenizer, nBarLayer=20, valBarSim=0.96, nOutLayer = 3, nCheckLayer=2, nWarmupTok = -1, globalBarLayer=-1, verbose=False)
+    (model, globalNumDecodedLayer, globalNumSkippedLayer) = hf_adapt(model, tokenizer, nBarLayer=20, valBarSim=0.96, nOutLayer = 3, nCheckLayer=1, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
 
     #import pdb; pdb.set_trace()
     # Generate text
@@ -57,7 +57,7 @@ def GetQueryGeneration(input_text):
 
     return generated_text, globalNumDecodedLayer, globalNumSkippedLayer
 
-def GetFileGeneration(input_file):
+def GetFileGeneration(input_file, output_file):
     test_data = []
     with open(input_file) as fin:
         for line in fin:
@@ -67,13 +67,12 @@ def GetFileGeneration(input_file):
                     "answer": example["answer"].split("####")[1].strip()
                 })
             
-            if len(test_data) > 3:
-                break 
+            # if len(test_data) > 3:
+            #     break 
 
     sumDecodeLayer = 0
     sumSkipLayer = 0
-    out_filename = ".log\gsm8k.log.json1"
-    with open(out_filename, "w") as fout:
+    with open(output_file, "w") as fout:
         for example in test_data:
             # assebly data
             input_query = f'<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: {example["question"]}<|eot_id|><|start_header_id|>assistant<|end_header_id|>'
@@ -159,7 +158,8 @@ def eval_results(log_file):
     print (table)
 
 ## main function
-eval_results(GetFileGeneration('/home/dozhang/EvalLLM/benchmark/gsm8k/test.jsonl'))
+eval_results(GetFileGeneration(input_file='/home/dozhang/EvalLLM/benchmark/gsm8k/test.jsonl', output_file=".log\gsm8k_2.generate.json"))
+#eval_results(".log\gsm8k.log.json")
 
 #GetQueryGeneration('<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: Josh decides to try flipping a house.  He buys a house for $80,000 and then puts in $50,000 in repairs.  This increased the value of the house by 150%.  How much profit did he make?<|eot_id|><|start_header_id|>assistant<|end_header_id|>')
 
