@@ -1,0 +1,40 @@
+target:
+  service: sing
+  name: msroctovc
+  workspace_name: Workspace_NLC
+ 
+environment:
+  image: amlt-sing/acpt-rocm6.1_ubuntu20.04_py3.9_pytorch2.1.2
+  setup:
+  - export PATH=$$PATH:/home/aiscuser/.local/bin
+  - sudo chmod -R 777 /opt/conda/bin
+  - sudo chmod -R 777 /opt/conda/share
+  - sudo apt update ; sudo apt install amd-smi-lib
+  #- pip install --user torch==2.4 --index-url https://download.pytorch.org/whl/rocm6.1
+  # fix error: NameError: name 'amdsmi' is not defined
+  #- pip uninstall pynvml nvidia-ml-py -y
+  # cache the wheel file
+  - pip install /mnt/msranlp/amd/flash_attn-2.6.3+torch2.1+rocm6.1-cp39-cp39-linux_x86_64.whl
+ 
+code:
+  local_dir: $CONFIG_DIR/..
+ 
+storage:
+  msranlp:
+    storage_account_name: nlcmt
+    container_name: nlcmt
+ 
+jobs:
+  - name: r-qw25
+    sku: 1xG8-MI300
+    command:    
+    - export ROCBLAS_INTERNAL_FP16_ALT_IMPL=1
+    - torchrun --nproc_per_node=8 run_training.py
+    submit_args:
+      env:
+        SHARED_MEMORY_PERCENT: 1.0
+    priority: High
+    mpi: True
+    process_count_per_node: 1
+    sla_tier: Premium
+    identity: managed

@@ -1,0 +1,135 @@
+description: Glan_Eval
+
+target:
+  # run "amlt target list/info amlk8s" to list the names of available AMLK8s targets
+  
+  # #2
+  # service: sing
+  # name: lang-sing-mtprod-wu2
+  # workspace_name: language-sing-mtprod-ws01-westus2
+
+  ##3
+  #service: sing
+  #name: lang-sing-wu3
+  #workspace_name: language-sing-ws01-westus3
+  
+  ##9
+  # service: sing
+  # name: msrresrchvc
+  # workspace_name: msrresrchws
+   
+  ##10
+  #service: sing
+  #name: lang-sing-mtres-eu
+  #workspace_name: language-sing-mtres-ws01-eus
+  
+  ##11
+  # service: sing
+  # name: lang-sing-mtres-eu
+  # workspace_name: language-sing-mtres-ws01-eus
+
+  #12
+  service: sing
+  name: msroctovc
+  workspace_name: Workspace_NLC
+
+
+environment:
+  #image: youkims/ds-moe:0.2
+  # image: nvidia/20.09:v7.0.2
+  # registry: shumingdocker.azurecr.io
+  # username: shumingdocker
+  image: xingxingzhang/pytorch:pt-2.0.1-transformers434-cuda11.7-cudnn8-devel
+
+  setup:
+  #- git clone https://github.com/facebookresearch/llama.git
+  - unzip glan_eval.zip  -d zdd
+  
+  
+  #- sudo apt-get update && sudo apt-get install mono-complete -y
+  - echo "master_addr:" "$$MASTER_ADDR"
+  - echo "master_port:" $$MASTER_PORT
+  - echo "node_rank:" $$OMPI_COMM_WORLD_RANK
+
+code:
+  # local directory of the code. this will be uploaded to the server.
+  # $CONFIG_DIR is expanded to the directory of this config file
+  # local_dir: $CONFIG_DIR/
+  local_dir: /home/dozhang/amlt/code
+ 
+
+storage:
+  input:
+    #storage_account_name: mainz01eus
+    #container_name: user
+    
+    #storage_account_name: turingdata1
+    #container_name: data
+    
+    #storage_account_name: mttadatastorage
+    #container_name: mtdatastore
+    
+    storage_account_name: nlcmt
+    container_name: nlcmt
+    
+  output:
+    #storage_account_name: msranlcmnmt
+    #container_name: teamdrive
+    
+    storage_account_name: nlcmt
+    container_name: nlcmt
+
+
+# data:
+#   data upload is not required for this example
+
+search:
+  job_template:
+    name: Glan_eval_{taskname}
+    sku: G2
+    command:
+    - export PATH=$$HOME/.local/bin/:$$PATH
+    #- sleep infinity
+    - mkdir -p /mnt/output/OurExperiments
+    - echo "begin runing job"
+    - cd ./zdd/glan_eval
+    - ls -l
+    - pip install prettytable
+    - bash amlt_job.sh {taskname} /mnt/input/HuggingfaceModels/{modelname}
+  type: grid
+  max_trials: 16
+  params:
+    - name: taskname
+      #values: ["arc_easy", "arc_challenge", "bbh", "boolq", "gsm8k", "hellaswag", "math", "mmlu", "piqa", "truthfulqa", "winogrande", "mgsm", "m_arc", "m_hellaswag", "m_mmlu", "m_truthfulqa"]
+      values: ["arc_easy", "arc_challenge", "gsm8k"]
+      #values: ["boolq"]
+      #values: ["bbh", "hellaswag"]
+      #values: ["math", "mmlu", "piqa", "truthfulqa"]
+      #values: ["winogrande"]
+      #values: ["mgsm", "m_arc", "m_hellaswag", "m_mmlu", "m_truthfulqa"]
+      
+    - name: modelname
+      #values:["Meta-Llama-3-8B", "Meta-Llama-3-8B-Instruct", "Mistral-7B-Instruct-v0.1", "Orca-2-7b", "Phi-3-mini-128k-instruct", "Phi-3-mini-4k-instruct", "Qwen-7B", "Xglan.train_test_merged", "chatglm3-6b", "glan_10k_test_merged", "glan_10m_v1_49500", "llama-2-7b", "llama-2-7b-chat", "llama-3", "phi-2", "stablelm-2-1_6b"]
+      values: ["Meta-Llama-3-8B", "Meta-Llama-3-8B-Instruct"]
+
+# jobs:
+#   - name: Glan_eval
+#     sku: G4
+#     command:
+#     - export PATH=$$HOME/.local/bin/:$$PATH
+#     #- sleep infinity
+#     - mkdir -p /mnt/output/OurExperiments
+#     #- chmod u+x mytest_llama.sh
+#     #- ./mytest_llama.sh
+#     # - torchrun --nproc_per_node 1 mytest_llama.py --ckpt_dir /mnt/input/dozhang/LLaMA/7B --tokenizer_path /mnt/input/dozhang/LLaMA/tokenizer.model
+#     #- python -m torch.distributed.run --nnodes 1 --nproc_per_node 1 mytest_llama.py --ckpt_dir /mnt/input/dozhang/LLaMA/7B --tokenizer_path /mnt/input/dozhang/LLaMA/tokenizer.model
+#     - echo "begin runing job"
+#     - cd ./zdd/glan_eval
+#     - ls -l
+#     - pip install prettytable
+
+#     - bash amlt_job.sh arc_easy Phi-3-mini-4k-instruct /mnt/input/HuggingfaceModels/Phi-3-mini-4k-instruct
+
+#     # - bash amlt_job.sh arc_easy,arc_challenge,bbh,boolq,gsm8k,hellaswag,math,mmlu,piqa,truthfulqa,winogrande,mgsm,m_arc,m_hellaswag,m_mmlu,m_truthfulqa /mnt/input/HuggingfaceModels/Meta-Llama-3-8B-Instruct
+
+#     # - bash amlt_job.sh arc_easy,arc_challenge,bbh,boolq,gsm8k,hellaswag,math,mmlu,piqa,truthfulqa,winogrande,mgsm,m_arc,m_hellaswag,m_mmlu,m_truthfulqa /mnt/input/HuggingfaceModels/Meta-Llama-3-8B

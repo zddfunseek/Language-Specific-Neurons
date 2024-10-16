@@ -20,11 +20,11 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 #tokenizer = AutoTokenizer.from_pretrained("/home/dozhang/nlcmt/HuggingfaceModels/Llama-2-13b-chat-hf")
 #model = AutoModelForCausalLM.from_pretrained("/home/dozhang/nlcmt/HuggingfaceModels/Llama-2-13b-chat-hf", torch_dtype=torch.bfloat16, device_map="auto")
 
-tokenizer = AutoTokenizer.from_pretrained("/home/dozhang/nlcmt2/HuggingfaceModels/Meta-Llama-3.1-8B-Instruct")
-model = AutoModelForCausalLM.from_pretrained("/home/dozhang/nlcmt2/HuggingfaceModels/Meta-Llama-3.1-8B-Instruct", torch_dtype=torch.bfloat16, device_map="auto")
+# tokenizer = AutoTokenizer.from_pretrained("/home/dozhang/nlcmt2/HuggingfaceModels/Meta-Llama-3.1-8B-Instruct")
+# model = AutoModelForCausalLM.from_pretrained("/home/dozhang/nlcmt2/HuggingfaceModels/Meta-Llama-3.1-8B-Instruct", torch_dtype=torch.bfloat16, device_map="auto")
 
-#tokenizer = AutoTokenizer.from_pretrained("/home/dozhang/nlcmt1/HuggingfaceModels/Meta-Llama-3.1-70B-Instruct")
-#model = AutoModelForCausalLM.from_pretrained("/home/dozhang/nlcmt1/HuggingfaceModels/Meta-Llama-3.1-70B-Instruct", torch_dtype=torch.bfloat16, device_map="auto")
+tokenizer = AutoTokenizer.from_pretrained("/home/dozhang/nlcmt1/HuggingfaceModels/Meta-Llama-3.1-70B-Instruct")
+model = AutoModelForCausalLM.from_pretrained("/home/dozhang/nlcmt1/HuggingfaceModels/Meta-Llama-3.1-70B-Instruct", torch_dtype=torch.bfloat16, device_map="auto")
 
 # 定义停止条件
 stop_token_id = tokenizer.convert_tokens_to_ids(["</s>", "<|eot_id|>", "<|end_of_text|>", "<|end_header_id|>", "<|start_header_id|>"])
@@ -38,7 +38,7 @@ def GetQueryGeneration(input_text):
     attention_mask = inputs.attention_mask
 
     ### Todo: complete hf_adapt 
-    (model, globalNumDecodedLayer, globalNumSkippedLayer) = hf_adapt(model, tokenizer, nBarLayer=20, valBarSim=0.96, nOutLayer = 3, nCheckLayer=1, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
+    (model, globalNumDecodedLayer, globalNumSkippedLayer) = hf_adapt(model, tokenizer, nBarLayer=54, valBarSim=0.98, nOutLayer = 4, nCheckLayer=1, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
 
     #import pdb; pdb.set_trace()
     # Generate text
@@ -91,7 +91,7 @@ def GetFileGeneration(input_file, output_file):
     print(f'\nTotalDecodedLayer={sumDecodeLayer}\tTotalSkippedLayer={sumSkipLayer}')
     print(f'SaveRatio={sumSkipLayer/(sumSkipLayer + sumDecodeLayer)*100:.2f}%')
 
-    return out_filename
+    return output_file
 
 AnswerKeyWordLangDict={'en': 'the\s+[\w\s]*(answer|choice|option|conclusion)[\w\s]+is'}
 
