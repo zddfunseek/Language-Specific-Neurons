@@ -35,11 +35,10 @@ from transformers.models.llama.modeling_llama import (
 
 globalBarLayer = -1
 
-def hf_adapt(model, tokenizer, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nCheckLayer = 3, nWarmupTok = 90, globalBarLayer=-1, verbose=False):
+def hf_adapt(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nCheckLayer = 3, nWarmupTok = 90, globalBarLayer=-1, verbose=False):
     #import pdb; pdb.set_trace()
     #max_length = model.config.rope_scaling['original_max_position_embeddings']
-    max_length = model.config.max_position_embeddings
-    max_length = 512
+    #max_length = model.config.max_position_embeddings
     num_layers = model.config.num_hidden_layers
     intermediate_size = model.config.intermediate_size
     hidden_size = model.config.hidden_size

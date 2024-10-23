@@ -125,6 +125,7 @@ jobs:
     - ls -l
     - pip install prettytable
     - pip install --upgrade transformers
+    - pip install --upgrade accelerate
     - python hf_llm.py --modelpath /mnt/input/HuggingfaceModels/Meta-Llama-3.1-8B-Instruct --testdata  /mnt/input/glan/benchmark_full/gsm8k.test.jsonl --outputfile /mnt/output/OurExperiments/DyFormer/gsm8k_8B.generation.json > /mnt/output/OurExperiments/DyFormer/gsm8k_8B.log
 
     priority: High

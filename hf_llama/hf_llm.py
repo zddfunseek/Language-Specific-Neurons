@@ -24,7 +24,8 @@ def GetQueryGeneration(model, tokenizer, stopping_criteria, input_text):
     attention_mask = inputs.attention_mask
 
     ### Todo: complete hf_adapt 
-    (model, globalNumDecodedLayer, globalNumSkippedLayer) = hf_adapt(model, tokenizer, nBarLayer=54, valBarSim=0.98, nOutLayer = 4, nCheckLayer=1, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
+    #(model, globalNumDecodedLayer, globalNumSkippedLayer) = hf_adapt(model, tokenizer, 512, nBarLayer=54, valBarSim=0.98, nOutLayer = 4, nCheckLayer=1, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
+    (model, globalNumDecodedLayer, globalNumSkippedLayer) = hf_adapt(model, tokenizer, 512, nBarLayer=20, valBarSim=0.96, nOutLayer = 3, nCheckLayer=2, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
 
     #import pdb; pdb.set_trace()
     # Generate text
@@ -146,15 +147,15 @@ def eval_results(log_file):
 def main(args):
     #import pdb; pdb.set_trace()
     tokenizer = AutoTokenizer.from_pretrained(args.modelpath)
-    model = AutoModelForCausalLM.from_pretrained(args.modelpath, torch_dtype=torch.bfloat16, device_map="auto")
+    model = AutoModelForCausalLM.from_pretrained(args.modelpath, torch_dtype=torch.float16, device_map="auto")
     # 定义停止条件
     stop_token_id = tokenizer.convert_tokens_to_ids(["</s>", "<|eot_id|>", "<|end_of_text|>", "<|end_header_id|>", "<|start_header_id|>"])
     stopping_criteria = StoppingCriteriaList([StopTokenCriteria(stop_token_id)])
 
-    eval_results(GetFileGeneration(model, tokenizer, stopping_criteria, input_file=args.testdata,  output_file=args.outputfile))
+    #eval_results(GetFileGeneration(model, tokenizer, stopping_criteria, input_file=args.testdata,  output_file=args.outputfile))
     #eval_results(".log\gsm8k.log.json")
 
-    #GetQueryGeneration('<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: Josh decides to try flipping a house.  He buys a house for $80,000 and then puts in $50,000 in repairs.  This increased the value of the house by 150%.  How much profit did he make?<|eot_id|><|start_header_id|>assistant<|end_header_id|>')
+    GetQueryGeneration(model, tokenizer, stopping_criteria, '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: A toy manufacturer receives an order for 400 toys. 5 workers are available to work on the order. 2 of the workers produce 6 toys an hour, and another 2 workers produce 4 toys an hour. They all work on the order during their 10-hour shift, and by the end of their shift the manufacturer still needs another 20 toys to be able to ship the order. How many toys per hour does the fifth worker produce?<|eot_id|><|start_header_id|>assistant<|end_header_id|>')
 
     #GetQueryGeneration("<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: If a bag of marbles costs $20 and the price increases by 20% of the original price every two months, how much would a bag of marbles cost after 36 months?<|eot_id|><|start_header_id|>assistant<|end_header_id|>")
 
