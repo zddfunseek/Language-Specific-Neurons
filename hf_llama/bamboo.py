@@ -34,18 +34,14 @@ from transformers.models.llama.modeling_llama import (
 )
 
 globalBarLayer = -1
+global_hidden_states = []
 
-def hf_adapt(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nCheckLayer = 3, nWarmupTok = 90, globalBarLayer=-1, verbose=False):
+def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nCheckLayer = 3, nWarmupTok = 90, globalBarLayer=-1, verbose=False):
     #import pdb; pdb.set_trace()
-    #max_length = model.config.rope_scaling['original_max_position_embeddings']
-    #max_length = model.config.max_position_embeddings
     num_layers = model.config.num_hidden_layers
     intermediate_size = model.config.intermediate_size
     hidden_size = model.config.hidden_size
-
-    # activation_mask = torch.zeros(num_layers, intermediate_size, dtype=torch.int32).to('cuda')
-    # layerwise_hiddenstates = torch.zeros(num_layers, max_length, hidden_size).to('cuda')
-    # layerwise_avgsim = torch.zeros(num_layers, max_length, hidden_size).to('cuda')
+  
 
     def Attn_factory():
         def Sdpa_forward(
@@ -166,10 +162,43 @@ def hf_adapt(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLay
 
         return mlp_forward
 
+
+    def custom_similarity(hidden_states_gather, hidden_states_next_gather, alpha=0.5):
+        # Cosine similarity along the specified dimension
+        cosine_sim = F.cosine_similarity(hidden_states_gather, hidden_states_next_gather, dim=-1)
+
+        # Calculate magnitudes
+        norm_gather = torch.norm(hidden_states_gather, dim=-1)
+        norm_next_gather = torch.norm(hidden_states_next_gather, dim=-1)
+
+        # Magnitude similarity (1 - normalized difference)
+        mag_sim = 1 - torch.abs(norm_gather - norm_next_gather) / torch.max(norm_gather, norm_next_gather)
+
+        # Combine cosine similarity and magnitude similarity
+        combined_similarity = alpha * cosine_sim + (1 - alpha) * mag_sim
+
+        return combined_similarity
+
+    def adjusted_cosine_similarity(vec_a, vec_b):
+        # Cosine similarity
+        cosine_sim = F.cosine_similarity(vec_a, vec_b, dim=-1)
+        
+        # Norms of vectors
+        norm_a = torch.norm(vec_a, dim=-1)
+        norm_b = torch.norm(vec_b, dim=-1)
+        
+        # Calculate magnitude weighting factor
+        magnitude_weight = torch.min(norm_a, norm_b) / torch.max(norm_a, norm_b)
+        
+        # Adjusted similarity
+        adjusted_similarity = cosine_sim * magnitude_weight
+        return adjusted_similarity
+
     globalNumDecodedLayer = torch.zeros(max_length).to('cuda')
     globalNumSkippedLayer = torch.zeros(max_length).to('cuda')
     def Model_factory():
-        globalBarLayer = -1    
+        globalBarLayer = -1   
+        global_hidden_states = []
         def model_forward(
             self,
             input_ids: torch.LongTensor = None,
@@ -226,6 +255,14 @@ def hf_adapt(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLay
             causal_mask = self._update_causal_mask(
                 attention_mask, inputs_embeds, cache_position, past_key_values, output_attentions
             )
+
+            global global_hidden_states
+            ### Alternate 0-layer hiddenstates
+            #import pdb; pdb.set_trace()
+            if len(input_ids[-1]) > 1:
+                hidden_states = inputs_embeds
+            else:
+                hidden_states = global_hidden_states[-1][:,-1:,:]
             hidden_states = inputs_embeds
 
             # create position embeddings to be shared across the decoder layers
@@ -245,9 +282,13 @@ def hf_adapt(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLay
             # nWarmupTok = 90
             # nOutLayer = 3
             # nBarLayer = 60 #(70B) #24 #24(7B)
-            # valBarSim = 0.99 #0.99 #0.96 #0.975(7B)
+            #valBarSim = 1.1 #0.99 #0.96 #0.975(7B)
             isActive = False
-            for _i in range(len(self.layers) - nOutLayer):
+            #for _i in range(len(self.layers) - nOutLayer):
+            #for _i in range(len(self.layers)):
+            #for _i in [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]:
+            #for _i in [0,1,2,3,4,5,5,6,6,7,7,8,8,9,9,10,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]:
+            for _i in [0,1,2,3,4,5,5,5,6,6,6,7,7,7,8,8,8,9,9,9,10,10,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]:
             #for decoder_layer in self.layers:
                 decoder_layer = self.layers[_i]
                 if output_hidden_states:
@@ -290,6 +331,8 @@ def hf_adapt(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLay
                 hidden_states_next_gather = torch.nn.parallel.gather(hidden_states_next, target_device='cuda:0')
                 # Compute cosine similarity
                 cos_sim = F.cosine_similarity(hidden_states_gather, hidden_states_next_gather, dim=-1)
+                #cos_sim = custom_similarity(hidden_states_gather, hidden_states_next_gather)
+                #cos_sim = adjusted_cosine_similarity(hidden_states_gather, hidden_states_next_gather)
                 cos_sim = torch.mean(cos_sim)
                 hidden_states = hidden_states_next
                 idxLayer = idxLayer + 1
@@ -357,6 +400,8 @@ def hf_adapt(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLay
 
             hidden_states = self.norm(hidden_states)
 
+            global_hidden_states.append(hidden_states)
+
             # add hidden states from the last decoder layer
             if output_hidden_states:
                 all_hidden_states += (hidden_states,)
@@ -376,6 +421,115 @@ def hf_adapt(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLay
 
         return model_forward
 
+    def LLMHead_factory():
+        def llmhead_forward(
+            self,
+            input_ids: torch.LongTensor = None,
+            attention_mask: Optional[torch.Tensor] = None,
+            position_ids: Optional[torch.LongTensor] = None,
+            past_key_values: Optional[Union[Cache, List[torch.FloatTensor]]] = None,
+            inputs_embeds: Optional[torch.FloatTensor] = None,
+            labels: Optional[torch.LongTensor] = None,
+            use_cache: Optional[bool] = None,
+            output_attentions: Optional[bool] = None,
+            output_hidden_states: Optional[bool] = None,
+            return_dict: Optional[bool] = None,
+            cache_position: Optional[torch.LongTensor] = None,
+            num_logits_to_keep: int = 0,
+        ) -> Union[Tuple, CausalLMOutputWithPast]:
+            r"""
+            Args:
+                labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+                    Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
+                    config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
+                    (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
+
+                num_logits_to_keep (`int`, *optional*):
+                    Calculate logits for the last `num_logits_to_keep` tokens. If `0`, calculate logits for all
+                    `input_ids` (special case). Only last token logits are needed for generation, and calculating them only for that
+                    token can save memory, which becomes pretty significant for long sequences or large vocabulary size.
+
+            Returns:
+
+            Example:
+
+            ```python
+            >>> from transformers import AutoTokenizer, LlamaForCausalLM
+
+            >>> model = LlamaForCausalLM.from_pretrained("meta-llama/Llama-2-7b-hf")
+            >>> tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-2-7b-hf")
+
+            >>> prompt = "Hey, are you conscious? Can you talk to me?"
+            >>> inputs = tokenizer(prompt, return_tensors="pt")
+
+            >>> # Generate
+            >>> generate_ids = model.generate(inputs.input_ids, max_length=30)
+            >>> tokenizer.batch_decode(generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)[0]
+            "Hey, are you conscious? Can you talk to me?\nI'm not conscious, but I can talk to you."
+            ```"""
+            output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+            output_hidden_states = (
+                output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            )
+            return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+            # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+            outputs = self.model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                inputs_embeds=inputs_embeds,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+                cache_position=cache_position,
+            )
+            
+            import pdb; pdb.set_trace()
+            hidden_states = outputs[0]
+            if self.config.pretraining_tp > 1:
+                lm_head_slices = self.lm_head.weight.split(self.vocab_size // self.config.pretraining_tp, dim=0)
+                logits = [F.linear(hidden_states, lm_head_slices[i]) for i in range(self.config.pretraining_tp)]
+                logits = torch.cat(logits, dim=-1)
+            else:
+                # if labels is None and not is_torchdynamo_compiling():
+                #     logger.warning_once(
+                #         "Starting from v4.46, the `logits` model output will have the same type as the model (except at train time, where it will always be FP32)"
+                #     )
+                # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
+                # TODO: remove the float() operation in v4.46
+                logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :]).float()
+
+            loss = None
+            if labels is not None:
+                # Upcast to float if we need to compute the loss to avoid potential precision issues
+                logits = logits.float()
+                # Shift so that tokens < n predict n
+                shift_logits = logits[..., :-1, :].contiguous()
+                shift_labels = labels[..., 1:].contiguous()
+                # Flatten the tokens
+                loss_fct = CrossEntropyLoss()
+                shift_logits = shift_logits.view(-1, self.config.vocab_size)
+                shift_labels = shift_labels.view(-1)
+                # Enable model parallelism
+                shift_labels = shift_labels.to(shift_logits.device)
+                loss = loss_fct(shift_logits, shift_labels)
+
+            if not return_dict:
+                output = (logits,) + outputs[1:]
+                return (loss,) + output if loss is not None else output
+
+            return CausalLMOutputWithPast(
+                loss=loss,
+                logits=logits,
+                past_key_values=outputs.past_key_values,
+                hidden_states=outputs.hidden_states,
+                attentions=outputs.attentions,
+            )
+        
+        return llmhead_forward
 
     #import pdb; pdb.set_trace()
     # embobj = model.model.embed_tokens
@@ -384,9 +538,10 @@ def hf_adapt(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLay
     attnobj.forward = MethodType(Attn_factory(), attnobj)
     modelobj = model.model
     modelobj.forward = MethodType(Model_factory(), modelobj)
-    # clmobj = model
-    # clmobj.forward = MethodType(CLM_factory(), clmobj)
+    llmheadobj = model
+    llmheadobj.forward = MethodType(LLMHead_factory(), llmheadobj)
     # model._run_engine = MethodType(Engine_factory(), model)
+
 
 
     # for i, layer_mask in enumerate(activation_mask):
