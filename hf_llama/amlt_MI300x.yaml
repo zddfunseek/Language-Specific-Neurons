@@ -15,12 +15,13 @@ environment:
   #- pip uninstall pynvml nvidia-ml-py -y
   # cache the wheel file
   - pip install /mnt/msranlp/amd/flash_attn-2.6.3+torch2.1+rocm6.1-cp39-cp39-linux_x86_64.whl
+  - pip install prettytable
  
 code:
-  local_dir: $CONFIG_DIR/..
+  local_dir: /..
  
 storage:
-  msranlp:
+  mydata:
     storage_account_name: nlcmt
     container_name: nlcmt
  
@@ -29,7 +30,8 @@ jobs:
     sku: 1xG8-MI300
     command:    
     - export ROCBLAS_INTERNAL_FP16_ALT_IMPL=1
-    - torchrun --nproc_per_node=8 run_training.py
+    - python hf_llm.py --modelpath /mnt/mydata/HuggingfaceModels/Meta-Llama-3.1-8B-Instruct --testdata  /mnt/mydata/glan/benchmark_full/gsm8k.test.jsonl --outputfile /mnt/mydata/projects/DyFormer/gsm8k_8B.generation.json > /mnt/mydata/projects/DyFormer/gsm8k_8B.log
+
     submit_args:
       env:
         SHARED_MEMORY_PERCENT: 1.0
