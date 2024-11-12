@@ -35,6 +35,7 @@ from transformers.models.llama.modeling_llama import (
 
 globalBarLayer = -1
 global_hidden_states = []
+global_layerwise_hiddenstates = []
 
 def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer = 3, nCheckLayer = 3, nWarmupTok = 90, globalBarLayer=-1, verbose=False):
     #import pdb; pdb.set_trace()
@@ -199,6 +200,7 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
     def Model_factory():
         globalBarLayer = -1   
         global_hidden_states = []
+        global_layerwise_hiddenstates = []
         def model_forward(
             self,
             input_ids: torch.LongTensor = None,
@@ -257,6 +259,7 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
             )
 
             global global_hidden_states
+            global global_layerwise_hiddenstates
             ### Alternate 0-layer hiddenstates
             #import pdb; pdb.set_trace()
             if len(input_ids[-1]) > 1:
@@ -279,16 +282,17 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
             numSkippedLayer = 0
             idxLayer = 0
             nHighSimContinuousLayers = 0
+            layerwise_hiddenstates=[]
             # nWarmupTok = 90
             # nOutLayer = 3
             # nBarLayer = 60 #(70B) #24 #24(7B)
             #valBarSim = 1.1 #0.99 #0.96 #0.975(7B)
             isActive = False
-            #for _i in range(len(self.layers) - nOutLayer):
+            for _i in range(len(self.layers) - nOutLayer):
             #for _i in range(len(self.layers)):
             #for _i in [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]:
             #for _i in [0,1,2,3,4,5,5,6,6,7,7,8,8,9,9,10,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]:
-            for _i in [0,1,2,3,4,5,5,5,6,6,6,7,7,7,8,8,8,9,9,9,10,10,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]:
+            #for _i in [0,1,2,3,4,5,5,5,6,6,6,7,7,7,8,8,8,9,9,9,10,10,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31]:
             #for decoder_layer in self.layers:
                 decoder_layer = self.layers[_i]
                 if output_hidden_states:
@@ -335,6 +339,7 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
                 #cos_sim = adjusted_cosine_similarity(hidden_states_gather, hidden_states_next_gather)
                 cos_sim = torch.mean(cos_sim)
                 hidden_states = hidden_states_next
+                global_layerwise_hiddenstates.append(self.norm(hidden_states))
                 idxLayer = idxLayer + 1
                 numDecodedLayer = numDecodedLayer + 1
                 if cos_sim > valBarSim:
@@ -374,6 +379,7 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
                     value_states = value_states.to(pre_value_states.device)
                 past_key_values.update(key_states, value_states, _cacheIdx)
                 numSkippedLayer = numSkippedLayer + 1
+                global_layerwise_hiddenstates.append(global_layerwise_hiddenstates[-1])
                 
             if not isActive and verbose:
                 print (f'--- No truncation at #position {position_ids[-1][-1]}, #SimScore {cos_sim}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
@@ -391,6 +397,7 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
                         position_embeddings=position_embeddings,
                     )
                 hidden_states = layer_outputs[0]
+                global_layerwise_hiddenstates.append(self.norm(hidden_states))
                 #print (f'+++ Perform on {position_ids[-1][-1]} position of {_lastIdx} layer +++\n')
                 numDecodedLayer = numDecodedLayer + 1
 
@@ -400,7 +407,7 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
 
             hidden_states = self.norm(hidden_states)
 
-            global_hidden_states.append(hidden_states)
+            global_hidden_states.append(hidden_states)            
 
             # add hidden states from the last decoder layer
             if output_hidden_states:
@@ -436,6 +443,7 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
             return_dict: Optional[bool] = None,
             cache_position: Optional[torch.LongTensor] = None,
             num_logits_to_keep: int = 0,
+            **loss_kwargs,
         ) -> Union[Tuple, CausalLMOutputWithPast]:
             r"""
             Args:
@@ -486,36 +494,34 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
                 return_dict=return_dict,
                 cache_position=cache_position,
             )
-            
-            import pdb; pdb.set_trace()
+
             hidden_states = outputs[0]
             if self.config.pretraining_tp > 1:
                 lm_head_slices = self.lm_head.weight.split(self.vocab_size // self.config.pretraining_tp, dim=0)
                 logits = [F.linear(hidden_states, lm_head_slices[i]) for i in range(self.config.pretraining_tp)]
                 logits = torch.cat(logits, dim=-1)
             else:
-                # if labels is None and not is_torchdynamo_compiling():
-                #     logger.warning_once(
-                #         "Starting from v4.46, the `logits` model output will have the same type as the model (except at train time, where it will always be FP32)"
-                #     )
                 # Only compute necessary logits, and do not upcast them to float if we are not computing the loss
-                # TODO: remove the float() operation in v4.46
-                logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :]).float()
+                logits = self.lm_head(hidden_states[:, -num_logits_to_keep:, :])
+
+            ## Get lay-wise predicated tokens
+            #import pdb; pdb.set_trace()
+            for _idx, lhd in enumerate(global_layerwise_hiddenstates):
+                l_logits = self.lm_head(lhd[:, :, :]).float()
+                l_layer_tokens = torch.argmax(l_logits, dim=-1)
+                #print (f'/// Predicted at #position {position_ids[-1][-1]} on #layer {_idx} with the token {tokenizer.convert_ids_to_tokens(l_layer_tokens[-1])}\n')
+            avg_logits = torch.mean(torch.stack(global_layerwise_hiddenstates[-4:]),dim=0)
+            avg_logits = self.lm_head(avg_logits).float()
+            avg_layer_tokens = torch.argmax(avg_logits, dim=-1)
+            #print (f'^^^ Average at #position {position_ids[-1][-1]} on #layer {_idx} with the token {tokenizer.convert_ids_to_tokens(avg_layer_tokens[-1])}\n')
+            global_layerwise_hiddenstates.clear()
+            logits = avg_logits
+
+
 
             loss = None
             if labels is not None:
-                # Upcast to float if we need to compute the loss to avoid potential precision issues
-                logits = logits.float()
-                # Shift so that tokens < n predict n
-                shift_logits = logits[..., :-1, :].contiguous()
-                shift_labels = labels[..., 1:].contiguous()
-                # Flatten the tokens
-                loss_fct = CrossEntropyLoss()
-                shift_logits = shift_logits.view(-1, self.config.vocab_size)
-                shift_labels = shift_labels.view(-1)
-                # Enable model parallelism
-                shift_labels = shift_labels.to(shift_logits.device)
-                loss = loss_fct(shift_logits, shift_labels)
+                loss = self.loss_function(logits=logits, labels=labels, vocab_size=self.config.vocab_size, **loss_kwargs)
 
             if not return_dict:
                 output = (logits,) + outputs[1:]
@@ -534,8 +540,8 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
     #import pdb; pdb.set_trace()
     # embobj = model.model.embed_tokens
     # embobj.forward = MethodType(Emb_factory(), embobj)
-    attnobj = model.model.layers[0].self_attn
-    attnobj.forward = MethodType(Attn_factory(), attnobj)
+    #attnobj = model.model.layers[0].self_attn
+    #attnobj.forward = MethodType(Attn_factory(), attnobj)
     modelobj = model.model
     modelobj.forward = MethodType(Model_factory(), modelobj)
     llmheadobj = model
