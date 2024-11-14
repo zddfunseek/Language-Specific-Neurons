@@ -188,7 +188,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--modelpath",
         type=str,
-        default="/home/dozhang/nlcmt1/HuggingfaceModels/Phi-3-mini-4k-instruct"
+        default="/home/dozhang/nlcmt1/HuggingfaceModels/Meta-Llama-3.1-8B-Instruct"
     )
     parser.add_argument(
         "--testdata",
