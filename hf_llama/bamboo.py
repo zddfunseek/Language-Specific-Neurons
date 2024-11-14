@@ -328,7 +328,7 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
                 if output_attentions:
                     all_self_attns += (layer_outputs[1],)
 
-                import pdb; pdb.set_trace()
+                #import pdb; pdb.set_trace()
                 hidden_states_next = layer_outputs[0]
                 # Assuming hidden_states and hidden_states_next are outputs from different GPUs
                 hidden_states_gather = torch.nn.parallel.gather(hidden_states, target_device='cuda:0')
