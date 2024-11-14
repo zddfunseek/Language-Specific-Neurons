@@ -150,6 +150,10 @@ def main(args):
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.pad_token_id = tokenizer.eos_token_id
+    tokenizer.padding_side = 'left'
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
     model = AutoModelForCausalLM.from_pretrained(args.modelpath, torch_dtype=torch.float16, device_map="auto")
     # 定义停止条件
     stop_token_id = tokenizer.convert_tokens_to_ids(["</s>", "<|eot_id|>", "<|end_of_text|>", "<|end_header_id|>", "<|start_header_id|>"])
