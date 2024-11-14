@@ -337,12 +337,13 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
                 cos_sim = F.cosine_similarity(hidden_states_gather, hidden_states_next_gather, dim=-1)
                 #cos_sim = custom_similarity(hidden_states_gather, hidden_states_next_gather)
                 #cos_sim = adjusted_cosine_similarity(hidden_states_gather, hidden_states_next_gather)
-                cos_sim = torch.mean(cos_sim)
+                cos_sim = torch.stack(torch.chunk(cos_sim, input_ids.size(0)),dim=0)
+                cos_sim = torch.mean(cos_sim, dim=-1)
                 hidden_states = hidden_states_next
                 global_layerwise_hiddenstates.append(self.norm(hidden_states))
                 idxLayer = idxLayer + 1
                 numDecodedLayer = numDecodedLayer + 1
-                if cos_sim > valBarSim:
+                if (cos_sim > valBarSim).all():
                     nHighSimContinuousLayers = nHighSimContinuousLayers + 1
                 else:
                     nHighSimContinuousLayers = 0
