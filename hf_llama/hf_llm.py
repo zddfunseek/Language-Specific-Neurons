@@ -21,6 +21,7 @@ class StopTokenCriteria(StoppingCriteria):
 
 def GetQueryGeneration(model, tokenizer, stopping_criteria, input_text):
     inputs = tokenizer(input_text, padding="longest", return_tensors="pt").to(device)
+    input_ids = inputs["input_ids"]
     # Create attention mask
     attention_mask = inputs.attention_mask
 
@@ -30,20 +31,10 @@ def GetQueryGeneration(model, tokenizer, stopping_criteria, input_text):
 
     # Generate text
     generation_kwargs = {"do_sample":False, "temperature":0, "top_p":1}
-    outputs = model.generate(inputs["input_ids"], attention_mask=attention_mask, max_length=512, num_return_sequences=1, 
+    outputs = model.generate(input_ids, attention_mask=attention_mask, max_length=512, num_return_sequences=1, 
                             pad_token_id=tokenizer.eos_token_id, stopping_criteria=stopping_criteria, **generation_kwargs)
 
-    # Decode the generated text
-    stop_sequence=["Question:", "Question", "USER:", "USER", "ASSISTANT:", "ASSISTANT", "Instruction:",
-                      "Instruction", "Response:", "Response", "</s>"]
-    import pdb; pdb.set_trace()
-    for output_idx in range(outputs.shape[0]):
-        for token_idx in range(inputs.shape[1], outputs.shape[1]):
-            if any(outputs[output_idx, token_idx: token_idx + len(stop_sequence)].tolist() == stop_sequence for stop_sequence in stop_id_sequences):
-                outputs[output_idx, token_idx:] = tokenizer.pad_token_id
-                break
-    
-    generated_text = tokenizer.decode(outputs, skip_special_tokens=False)
+    generated_text = [tokenizer.decode(output.tolist(), skip_special_tokens=True) for output in outputs]
 
     print(f'\nPrompt::: {input_text}\n')
     print(f'Response >>> {generated_text}')
