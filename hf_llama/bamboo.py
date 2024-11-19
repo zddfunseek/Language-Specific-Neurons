@@ -359,11 +359,12 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
                 #if idxLayer >= nBarLayer and nHighSimContinuousLayers >= 3:
                 #if nHighSimContinuousLayers >= 3:
                 ### Only allow to layer-trucation on generation, instead of prompting stage
+                globalBarLayer = nBarLayer ### Hack for batch decoding
                 if len(input_ids[-1]) < 2 and globalBarLayer > 0:
                     if idxLayer >= globalBarLayer and nHighSimContinuousLayers >= nCheckLayer and position_ids[-1][-1] > nWarmupTok:
                         #import pdb; pdb.set_trace()
                         if verbose:
-                            print (f'@@@ Layer-truncation at #layer {idxLayer}/{num_layers}, #position {position_ids[-1][-1]}, #SimScore {cos_sim}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
+                            print (f'@@@ Layer-truncation at #layer {idxLayer}/{num_layers}, #position {position_ids[-1][-1]}, #SimScore {cos_sim}, for token {tokenizer.convert_ids_to_tokens(input_ids.flatten())}\n')
                         isActive = True
                         break               
 
@@ -383,7 +384,7 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
                 global_layerwise_hiddenstates.append(global_layerwise_hiddenstates[-1])
                 
             if not isActive and verbose:
-                print (f'--- No truncation at #position {position_ids[-1][-1]}, #SimScore {cos_sim}, for token {tokenizer.convert_ids_to_tokens(input_ids[-1])}\n')
+                print (f'--- No truncation at #position {position_ids[-1][-1]}, #SimScore {cos_sim}, for token {tokenizer.convert_ids_to_tokens(input_ids.flatten())}\n')
 
             # process last specified output layers
             for _lastIdx in range(len(self.layers) - nOutLayer, len(self.layers)):

@@ -27,12 +27,13 @@ def GetQueryGeneration(model, tokenizer, stopping_criteria, input_text):
 
     ### Todo: complete hf_adapt 
     #(model, globalNumDecodedLayer, globalNumSkippedLayer) = hf_adapt(model, tokenizer, 512, nBarLayer=54, valBarSim=0.98, nOutLayer = 4, nCheckLayer=1, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
-    (model, globalNumDecodedLayer, globalNumSkippedLayer) = bamboo(model, tokenizer, 1024, nBarLayer=94, valBarSim=0.96, nOutLayer = 3, nCheckLayer=2, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
+    (model, globalNumDecodedLayer, globalNumSkippedLayer) = bamboo(model, tokenizer, 2048, nBarLayer=24, valBarSim=0.96, nOutLayer = 3, nCheckLayer=2, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
 
     # Generate text
     generation_kwargs = {"do_sample":False, "temperature":0, "top_p":1}
-    outputs = model.generate(input_ids, attention_mask=attention_mask, max_length=512, num_return_sequences=1, 
-                            pad_token_id=tokenizer.eos_token_id, stopping_criteria=stopping_criteria, **generation_kwargs)
+    #outputs = model.generate(input_ids, attention_mask=attention_mask, max_length=2048, num_return_sequences=1, pad_token_id=tokenizer.eos_token_id, stopping_criteria=stopping_criteria, **generation_kwargs)
+    outputs = model.generate(input_ids, attention_mask=attention_mask, max_length=2048, num_return_sequences=1, 
+                            pad_token_id=tokenizer.eos_token_id, **generation_kwargs)
 
     generated_text = [tokenizer.decode(output.tolist(), skip_special_tokens=True) for output in outputs]
 
@@ -147,6 +148,7 @@ def main(args):
     #import pdb; pdb.set_trace()
     tokenizer = AutoTokenizer.from_pretrained(args.modelpath)
     tokenizer.padding_side = 'left'
+    #tokenizer.add_special_tokens({'pad_token': '[PAD]'})
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
         tokenizer.pad_token_id = tokenizer.eos_token_id
@@ -162,7 +164,7 @@ def main(args):
 
     #GetQueryGeneration(model, tokenizer, stopping_criteria, ['John drives for 3 hours at a speed of 60 mph and then turns around because he realizes he forgot something very important at home.  He tries to get home in 4 hours but spends the first 2 hours in standstill traffic.  He spends the next half-hour driving at a speed of 30mph, before being able to drive the remaining time of the 4 hours going at 80 mph.  How far is he from home at the end of those 4 hours?', 'If a bag of marbles costs $20 and the price increases by 20% of the original price every two months, how much would a bag of marbles cost after 36 months?'])
 
-    GetQueryGeneration(model, tokenizer, stopping_criteria, ['<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: John drives for 3 hours at a speed of 60 mph and then turns around because he realizes he forgot something very important at home.  He tries to get home in 4 hours but spends the first 2 hours in standstill traffic.  He spends the next half-hour driving at a speed of 30mph, before being able to drive the remaining time of the 4 hours going at 80 mph.  How far is he from home at the end of those 4 hours?<|eot_id|><|start_header_id|>assistant<|end_header_id|>', '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: If a bag of marbles costs $20 and the price increases by 20% of the original price every two months, how much would a bag of marbles cost after 36 months?<|eot_id|><|start_header_id|>assistant<|end_header_id|>'])
+    GetQueryGeneration(model, tokenizer, stopping_criteria, ['<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: John drives for 3 hours at a speed of 60 mph and then turns around because he realizes he forgot something very important at home.  He tries to get home in 4 hours but spends the first 2 hours in standstill traffic.  He spends the next half-hour driving at a speed of 30mph, before being able to drive the remaining time of the 4 hours going at 80 mph.  How far is he from home at the end of those 4 hours?<|eot_id|><|start_header_id|>assistant<|end_header_id|>', '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: If a bag of marbles costs $20 and the price increases by 20% of the original price every two months, how much would a bag of marbles cost after 36 months?<|eot_id|><|start_header_id|>assistant<|end_header_id|>', '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: Josh decides to try flipping a house.  He buys a house for $80,000 and then puts in $50,000 in repairs.  This increased the value of the house by 150%.  How much profit did he make?<|eot_id|><|start_header_id|>assistant<|end_header_id|>', '<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>Kylar went to the store to buy glasses for his new apartment. One glass costs $5, but every second glass costs only 60% of the price. Kylar wants to buy 16 glasses. How much does he need to pay for them?<|eot_id|><|start_header_id|>assistant<|end_header_id|>'])
     
     #GetQueryGeneration('<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant for travel tips and recommendations<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: Josh decides to try flipping a house.  He buys a house for $80,000 and then puts in $50,000 in repairs.  This increased the value of the house by 150%.  How much profit did he make?<|eot_id|><|start_header_id|>assistant<|end_header_id|>')
 
