@@ -27,7 +27,7 @@ def GetQueryGeneration(model, tokenizer, stopping_criteria, input_text):
 
     ### Todo: complete hf_adapt 
     #(model, globalNumDecodedLayer, globalNumSkippedLayer) = hf_adapt(model, tokenizer, 512, nBarLayer=54, valBarSim=0.98, nOutLayer = 4, nCheckLayer=1, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
-    (model, globalNumDecodedLayer, globalNumSkippedLayer) = bamboo(model, tokenizer, 1024, nBarLayer=24, valBarSim=0.96, nOutLayer = 3, nCheckLayer=2, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
+    (model, globalNumDecodedLayer, globalNumSkippedLayer) = bamboo(model, tokenizer, 1024, nBarLayer=94, valBarSim=0.96, nOutLayer = 3, nCheckLayer=2, nWarmupTok = -1, globalBarLayer=-1, verbose=True)
 
     # Generate text
     generation_kwargs = {"do_sample":False, "temperature":0, "top_p":1}
@@ -158,7 +158,7 @@ def main(args):
     #eval_results(GetFileGeneration(model, tokenizer, stopping_criteria, input_file=args.testdata,  output_file=args.outputfile))
     #eval_results(".log\gsm8k.log.json")
 
-    #GetQueryGeneration(model, tokenizer, stopping_criteria, 'John drives for 3 hours at a speed of 60 mph and then turns around because he realizes he forgot something very important at home.  He tries to get home in 4 hours but spends the first 2 hours in standstill traffic.  He spends the next half-hour driving at a speed of 30mph, before being able to drive the remaining time of the 4 hours going at 80 mph.  How far is he from home at the end of those 4 hours?')
+    #GetQueryGeneration(model, tokenizer, stopping_criteria, "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\nYou are a helpful AI assistant.<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nQuestion: You can buy a movie super ticket for $20 that includes rights to watch any movie and you get one popcorn with a soda for only $1 extra. Or you can buy a movie ticket for $12 and buy one popcorn and a soda at regular price. What's the regular price of popcorn if the soda costs $3 and you didn't buy the super ticket and ended up saving $2?<|eot_id|><|start_header_id|>assistant<|end_header_id|>")
 
     #GetQueryGeneration(model, tokenizer, stopping_criteria, ['John drives for 3 hours at a speed of 60 mph and then turns around because he realizes he forgot something very important at home.  He tries to get home in 4 hours but spends the first 2 hours in standstill traffic.  He spends the next half-hour driving at a speed of 30mph, before being able to drive the remaining time of the 4 hours going at 80 mph.  How far is he from home at the end of those 4 hours?', 'If a bag of marbles costs $20 and the price increases by 20% of the original price every two months, how much would a bag of marbles cost after 36 months?'])
 

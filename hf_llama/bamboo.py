@@ -507,14 +507,16 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
 
             ## Get lay-wise predicated tokens
             #import pdb; pdb.set_trace()
+            layer_predict_tokens=[]
             for _idx, lhd in enumerate(global_layerwise_hiddenstates):
                 l_logits = self.lm_head(lhd[:, :, :]).float()
                 l_layer_tokens = torch.argmax(l_logits, dim=-1)
-                #print (f'/// Predicted at #position {position_ids[-1][-1]} on #layer {_idx} with the token {tokenizer.convert_ids_to_tokens(l_layer_tokens[-1])}\n')
-            avg_logits = torch.mean(torch.stack(global_layerwise_hiddenstates[-4:]),dim=0)
+                layer_predict_tokens.append(tokenizer.convert_ids_to_tokens(l_layer_tokens[-1]))
+            avg_logits = torch.mean(torch.stack(global_layerwise_hiddenstates[-8:]),dim=0)
             avg_logits = self.lm_head(avg_logits).float()
             avg_layer_tokens = torch.argmax(avg_logits, dim=-1)
-            #print (f'^^^ Average at #position {position_ids[-1][-1]} on #layer {_idx} with the token {tokenizer.convert_ids_to_tokens(avg_layer_tokens[-1])}\n')
+            layer_predict_tokens = sum(layer_predict_tokens,[])
+            print (f'/// Layer-wise predicted at #position {position_ids[-1][-1]} with {layer_predict_tokens} + Avg. 4 with {tokenizer.convert_ids_to_tokens(avg_layer_tokens[-1])}\n')
             global_layerwise_hiddenstates.clear()
             logits = avg_logits
 
@@ -545,10 +547,8 @@ def bamboo(model, tokenizer, max_length, nBarLayer=60, valBarSim=0.99, nOutLayer
     #attnobj.forward = MethodType(Attn_factory(), attnobj)
     modelobj = model.model
     modelobj.forward = MethodType(Model_factory(), modelobj)
-    llmheadobj = model
-    llmheadobj.forward = MethodType(LLMHead_factory(), llmheadobj)
-    # model._run_engine = MethodType(Engine_factory(), model)
-
+    # llmheadobj = model
+    # llmheadobj.forward = MethodType(LLMHead_factory(), llmheadobj)
 
 
     # for i, layer_mask in enumerate(activation_mask):
